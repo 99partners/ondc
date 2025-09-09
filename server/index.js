@@ -36,7 +36,6 @@
 // const keyPairs = generateKeyPairs();
 // console.log(keyPairs);
 
-// Import required modules
 const express = require('express'); // Express framework for handling HTTP requests
 const bodyParser = require('body-parser'); // Middleware for parsing request bodies
 const crypto = require('crypto'); // Node.js crypto module for encryption and decryption
@@ -50,6 +49,7 @@ const ONDC_PUBLIC_KEY =
 const REQUEST_ID = '99digicom-req-20250904-001';
 const SIGNING_PRIVATE_KEY =
   'T9e7d6aNJD1D90Y9qETlJGg0xLr0IuTKuMv6yg51CrwSxGy4nVCuYiZNz9nPVJOxUparuh3rKvj9mlyVzFRvrg==';
+
 
 const htmlFile = `
 <!--Contents of ondc-site-verification.html. -->
@@ -133,7 +133,5 @@ async function signMessage(signingString, privateKey) {
     signedMessage,
     _sodium.base64_variants.ORIGINAL
   );
-
-  
   return signature;
 }
