@@ -47,7 +47,7 @@ const ENCRYPTION_PRIVATE_KEY =
   'MC4CAQAwBQYDK2VuBCIEIHA+jwRt3qb7iISfxBgvJh5rrLjfEoI7i873grc7BBRq';
 const ONDC_PUBLIC_KEY =
   'MCowBQYDK2VuAyEARa7vZyqavgLTlQg+TUKjhgqG2uvE9LkMEhoh9dGhQzo=';
-const REQUEST_ID = '6a6abf53-674f-4d6d-a52b-62e3fda55e03';
+const REQUEST_ID = '99digicom-req-20250904-001';
 const SIGNING_PRIVATE_KEY =
   'T9e7d6aNJD1D90Y9qETlJGg0xLr0IuTKuMv6yg51CrwSxGy4nVCuYiZNz9nPVJOxUparuh3rKvj9mlyVzFRvrg==';
 
@@ -58,7 +58,7 @@ const htmlFile = `
   <head>
     <meta
       name="ondc-site-verification"
-      content="SIGNED_UNIQUE_REQ_ID"
+      content="9Ns1kgNszpwQIkU2WLFB31KkX8kI/uJLhzflihI7L/NVuicyAsAaE3HcBOMuCeo5PyRvDJ62AjWoZS0jr6b2Bg=="
     />
   </head>
   <body>
@@ -133,5 +133,7 @@ async function signMessage(signingString, privateKey) {
     signedMessage,
     _sodium.base64_variants.ORIGINAL
   );
+
+  
   return signature;
 }
