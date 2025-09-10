@@ -66,6 +66,7 @@ const htmlFile = `
   </body>
 </html>
 `;
+
 // Pre-defined public and private keys
 const privateKey = crypto.createPrivateKey({
   key: Buffer.from(ENCRYPTION_PRIVATE_KEY, 'base64'), // Decode private key from base64
@@ -88,39 +89,17 @@ const sharedKey = crypto.diffieHellman({
 const app = express();
 app.use(bodyParser.json()); // Middleware to parse JSON request bodies
 
-
 app.get('/on_subscribe', (req, res) => {
   res.status(200).send("✅ ONDC on_subscribe endpoint is up! Use POST for verification.");
 });
 
-app.post('/on_subscribe', function (req, res) {
-  try {
-    const { challenge } = req.body;
-
-    if (!challenge) {
-      return res.status(400).json({ error: "Missing challenge in request body" });
-    }
-
-    const answer = decryptAES256ECB(sharedKey, challenge);
-    const resp = { answer: answer };
-
-    console.log("Received Challenge:", challenge);
-    console.log("Decrypted Answer:", answer);
-
-    res.status(200).json(resp);
-  } catch (err) {
-    console.error("Error in /on_subscribe:", err);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-
 // Route for handling subscription requests
-// app.post('/on_subscribe', function (req, res) {
-//   const { challenge } = req.body; // Extract the 'challenge' property from the request body
-//   const answer = decryptAES256ECB(sharedKey, challenge); // Decrypt the challenge using AES-256-ECB
-//   const resp = { answer: answer };
-//   res.status(200).json(resp); // Send a JSON response with the answer
-// });
+app.post('/on_subscribe', function (req, res) {
+  const { challenge } = req.body; // Extract the 'challenge' property from the request body
+  const answer = decryptAES256ECB(sharedKey, challenge); // Decrypt the challenge using AES-256-ECB
+  const resp = { answer: answer };
+  res.status(200).json(resp); // Send a JSON response with the answer
+});
 
 // Route for serving a verification file
 app.get('/ondc-site-verification.html', async (req, res) => {
