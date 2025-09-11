@@ -89,12 +89,12 @@ const sharedKey = crypto.diffieHellman({
 const app = express();
 app.use(bodyParser.json()); // Middleware to parse JSON request bodies
 
-app.get('/ondc/on_subscribe', (req, res) => {
+app.get('/on_subscribe', (req, res) => {
   res.status(200).send("✅ ONDC on_subscribe endpoint is up! Use POST for verification.");
 });
 
 // Route for handling subscription requests
-app.post('/ondc/on_subscribe', function (req, res) {
+app.post('/on_subscribe', function (req, res) {
   const { challenge } = req.body; // Extract the 'challenge' property from the request body
   const answer = decryptAES256ECB(sharedKey, challenge); // Decrypt the challenge using AES-256-ECB
   const resp = { answer: answer };
