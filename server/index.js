@@ -45,7 +45,7 @@ const port = 3000; // Port on which the server will listen
 const ENCRYPTION_PRIVATE_KEY =
   'MC4CAQAwBQYDK2VuBCIEIHA+jwRt3qb7iISfxBgvJh5rrLjfEoI7i873grc7BBRq';
 const ONDC_PUBLIC_KEY =
-  'MCowBQYDK2VuAyEARa7vZyqavgLTlQg+TUKjhgqG2uvE9LkMEhoh9dGhQzo=';
+  'MCowBQYDK2VuAyEAduMuZgmtpjdCuxv+Nc49K0cB6tL/Dj3HZetvVN7ZekM=';
 const REQUEST_ID = '99digicom-req-20250904-001';
 const SIGNING_PRIVATE_KEY =
   'T9e7d6aNJD1D90Y9qETlJGg0xLr0IuTKuMv6yg51CrwSxGy4nVCuYiZNz9nPVJOxUparuh3rKvj9mlyVzFRvrg==';
