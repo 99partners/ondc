@@ -89,7 +89,7 @@ const sharedKey = crypto.diffieHellman({
 const app = express();
 app.use(bodyParser.json()); // Middleware to parse JSON request bodies
 
-app.get('/on_subscribe', (req, res) => {
+app.get('/ondc/on_subscribe', (req, res) => {
   res.status(200).send("✅ ONDC on_subscribe endpoint is up! Use POST for verification.");
 });
 
