@@ -261,10 +261,7 @@ app.get('/health', (req, res) => res.send('Health OK!!'));
 //-------------------------------------------------------------
 // MONGODB CONNECTION & SERVER START
 //-------------------------------------------------------------
-mongoose.connect('mongodb://localhost:27017/sellerApp', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
+mongoose.connect('mongodb://localhost:27017/sellerApp')
 .then(() => {
   console.log('Connected to MongoDB');
   app.listen(PORT, () => {
