@@ -104,6 +104,7 @@ async function verifyAuthHeader(req, res, next) {
     return res.status(500).json({ message: 'Header verification error', error: err.message });
   }
 }
+
 function decryptAES256ECB(key, encrypted) {
   const iv = Buffer.alloc(0); // ECB has no IV
   const decipher = crypto.createDecipheriv('aes-256-ecb', key, iv);
