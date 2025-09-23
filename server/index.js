@@ -5,6 +5,7 @@ const _sodium = require('libsodium-wrappers');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const axios = require('axios');
+const { isHeaderValid } = require('ondc-crypto-sdk-nodejs');
 const SearchData = require('./models/searchData'); // Make sure this file exists
 
 //-------------------------------------------------------------
@@ -77,6 +78,32 @@ app.use(express.json());
 //-------------------------------------------------------------
 // UTILITY FUNCTIONS
 //-------------------------------------------------------------
+async function getSenderPublicKey(req) {
+  // Prefer explicit env overrides per environment/setup
+  if (process.env.BUYER_APP_PUBLIC_KEY) return process.env.BUYER_APP_PUBLIC_KEY;
+  if (process.env.SENDER_PUBLIC_KEY) return process.env.SENDER_PUBLIC_KEY;
+  // Fallback to known ONDC public key if configured
+  return ONDC_PUBLIC_KEY;
+}
+
+async function verifyAuthHeader(req, res, next) {
+  try {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    if (!authHeader) {
+      return res.status(401).json({ message: 'Authorization header missing' });
+    }
+
+    const publicKey = await getSenderPublicKey(req);
+    const valid = await isHeaderValid({ header: authHeader, body: req.body, publicKey });
+    if (!valid) {
+      return res.status(401).json({ message: 'Invalid authorization header' });
+    }
+    return next();
+  } catch (err) {
+    console.error('Auth header verification failed:', err.message);
+    return res.status(500).json({ message: 'Header verification error', error: err.message });
+  }
+}
 function decryptAES256ECB(key, encrypted) {
   const iv = Buffer.alloc(0); // ECB has no IV
   const decipher = crypto.createDecipheriv('aes-256-ecb', key, iv);
@@ -136,7 +163,7 @@ app.get('/ondc-site-verification.html', async (req, res) => {
 //-------------------------------------------------------------
 // SEARCH ENDPOINTS
 //-------------------------------------------------------------
-app.post('/search', async (req, res) => {
+app.post('/search', verifyAuthHeader, async (req, res) => {
   try {
     const requestBody = req.body;
     const { context } = requestBody;
@@ -153,7 +180,7 @@ app.post('/search', async (req, res) => {
     console.log('Received search request from buyer app:', {
       context_id: context.context_id,
       bap_id: context.bap_id,
-      bap_uri
+      bap_uri:context.bap_uri
     });
 
     // Save incoming request
