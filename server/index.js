@@ -2,7 +2,6 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const _sodium = require('libsodium-wrappers');
-const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const axios = require('axios');
