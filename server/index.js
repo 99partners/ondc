@@ -1,5 +1,5 @@
 const express = require('express');
-const bodyParser = require('body-parser');
+require('dotenv').config();
 const crypto = require('crypto');
 const _sodium = require('libsodium-wrappers');
 const mongoose = require('mongoose');
@@ -10,21 +10,24 @@ const SearchData = require('./models/searchData'); // Make sure this file exists
 //-------------------------------------------------------------
 // CONFIGURATION
 //-------------------------------------------------------------
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 // Keys for ONDC subscription / site verification
 const ENCRYPTION_PRIVATE_KEY =
+  process.env.ENCRYPTION_PRIVATE_KEY ||
   'MC4CAQAwBQYDK2VuBCIEIHA+jwRt3qb7iISfxBgvJh5rrLjfEoI7i873grc7BBRq';
 const ONDC_PUBLIC_KEY =
+  process.env.ONDC_PUBLIC_KEY ||
   'MCowBQYDK2VuAyEAa9Wbpvd9SsrpOZFcynyt/TO3x0Yrqyys4NUGIvyxX2Q=';
-const REQUEST_ID = '99digicom-req-20250904-001';
+const REQUEST_ID = process.env.REQUEST_ID || '99digicom-req-20250904-001';
 const SIGNING_PRIVATE_KEY =
+  process.env.SIGNING_PRIVATE_KEY ||
   'T9e7d6aNJD1D90Y9qETlJGg0xLr0IuTKuMv6yg51CrwSxGy4nVCuYiZNz9nPVJOxUparuh3rKvj9mlyVzFRvrg==';
 
 // BPP (Seller Platform) config
 const BPP_CONFIG = {
-  id: 'staging.99digicom.com',
-  uri: 'https://staging.99digicom.com',
+  id: process.env.BPP_ID || 'staging.99digicom.com',
+  uri: process.env.BPP_URI || 'https://staging.99digicom.com',
 };
 
 //-------------------------------------------------------------
@@ -68,7 +71,6 @@ const sharedKey = crypto.diffieHellman({
 // EXPRESS APP
 //-------------------------------------------------------------
 const app = express();
-app.use(bodyParser.json());
 app.use(cors());
 app.use(express.json());
 
@@ -114,9 +116,15 @@ app.get('/on_subscribe', (req, res) => {
 });
 
 app.post('/on_subscribe', (req, res) => {
-  const { challenge } = req.body;
-  const answer = decryptAES256ECB(sharedKey, challenge);
-  res.status(200).json({ answer });
+  try {
+    const { challenge } = req.body || {};
+    if (!challenge) return res.status(400).json({ message: 'challenge is required' });
+    const answer = decryptAES256ECB(sharedKey, challenge);
+    res.status(200).json({ answer });
+  } catch (err) {
+    console.error('on_subscribe error:', err.message);
+    res.status(500).json({ message: 'Verification failed', error: err.message });
+  }
 });
 
 app.get('/ondc-site-verification.html', async (req, res) => {
@@ -149,8 +157,10 @@ app.post('/search', async (req, res) => {
     });
 
     // Save incoming request
+    const searchQueryName =
+      requestBody?.message?.intent?.item?.descriptor?.name || 'search request';
     const searchRequestData = {
-      query: context.message?.intent?.item?.descriptor?.name || 'search request',
+      query: searchQueryName,
       filters: requestBody?.message?.intent || {},
       results: [],
       source: 'buyer-app'
@@ -225,7 +235,9 @@ app.post('/search', async (req, res) => {
 
 app.get('/search', async (req, res) => {
   try {
-    const { query, source, limit = 10, page = 1 } = req.query;
+    const { query, source } = req.query;
+    const limit = parseInt(req.query.limit || '10', 10);
+    const page = parseInt(req.query.page || '1', 10);
     const queryOptions = {};
 
     if (query) queryOptions.query = { $regex: query, $options: 'i' };
@@ -237,7 +249,7 @@ app.get('/search', async (req, res) => {
       .find(queryOptions)
       .sort({ timestamp: -1 })
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(limit);
 
     const total = await SearchData.countDocuments(queryOptions);
 
@@ -261,11 +273,17 @@ app.get('/health', (req, res) => res.send('Health OK!!'));
 //-------------------------------------------------------------
 // MONGODB CONNECTION & SERVER START
 //-------------------------------------------------------------
-mongoose.connect('mongodb://localhost:27017/sellerApp')
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/sellerApp';
+
+mongoose.connect(MONGODB_URI)
 .then(() => {
   console.log('Connected to MongoDB');
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-  });
+  if (require.main === module) {
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on http://localhost:${PORT}`);
+    });
+  }
 })
 .catch(err => console.error('MongoDB connection error:', err));
+
+module.exports = { app };
