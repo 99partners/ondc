@@ -397,8 +397,8 @@ app.post('/search', async (req, res) => {
   }
 });
 
-// Handle 404 - Route not found
-app.use('*', (req, res) => {
+// Handle 404 - Route not found (FIXED: Use proper wildcard pattern)
+app.use((req, res) => {
   res.status(404).json({
     error: 'Endpoint not found',
     message: `The requested endpoint ${req.originalUrl} does not exist`,
