@@ -1,6 +1,6 @@
 const express = require('express');
 const { isSignatureValid } = require('ondc-crypto-sdk-nodejs');
-const { config } = require('./config');
+const { config } = require('../config');
 
 const app = express();
 

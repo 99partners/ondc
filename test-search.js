@@ -1,4 +1,4 @@
-const axios = require('axios');
+const axios = require('./node_modules/axios/index.d.cts');
 
 // Base URL for the ONDC seller search service
 const BASE_URL = 'http://localhost:3000';
