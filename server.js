@@ -1,403 +1,554 @@
-// const express = require('express');
-// const { isSignatureValid } = require('ondc-crypto-sdk-nodejs');
-// const { config } = require('./config');
+// Import the createAuthorizationHeader function from the ONDC Crypto SDK
+const { createAuthorizationHeader } = require('ondc-crypto-sdk-nodejs');
 
-// const app = express();
+// This is where you would load your private key
+// For example: const privateKey = fs.readFileSync('path/to/private-key.pem', 'utf8');
+const privateKey = "T9e7d6aNJD1D90Y9qETlJGg0xLr0IuTKuMv6yg51CrwSxGy4nVCuYiZNz9nPVJOxUparuh3rKvj9mlyVzFRvrg=="; // Replace with your actual BPP seller private key
 
-// // Middleware to parse JSON requests
-// app.use(express.json());
-
-// // Public key from configuration (in real-world use registry or seller config)
-// const buyerPublicKey = config.buyerPublicKey;
-
-// // Helper function to extract and parse the authorization header
-// function parseAuthorizationHeader(authHeader) {
-//   if (!authHeader) {
-//     return null;
-//   }
-  
-//   // Authorization header format: 'Signature keyId="",algorithm="",headers="",signature=""'
-//   const parts = authHeader.split(',');
-//   const parsed = {};
-  
-//   parts.forEach(part => {
-//     const [key, value] = part.split('=').map(item => item.trim());
-//     if (key && value) {
-//       // Remove quotes from value
-//       parsed[key.toLowerCase()] = value.replace(/"/g, '');
-//     }
-//   });
-  
-//   return parsed;
-// }
-
-// // Helper function to verify the authorization header
-// async function verifyAuthorizationHeader(authHeader, requestBody) {
-//   try {
-//     // Parse the authorization header
-//     const parsedHeader = parseAuthorizationHeader(authHeader);
-    
-//     if (!parsedHeader) {
-//       return { valid: false, reason: 'Invalid authorization header format' };
-//     }
-    
-//     // Extract required fields from the parsed header
-//     const { keyid, algorithm, headers, signature } = parsedHeader;
-    
-//     if (!keyid || !algorithm || !headers || !signature) {
-//       return { valid: false, reason: 'Missing required fields in authorization header' };
-//     }
-    
-//     // Verify the signature using the ONDC Crypto SDK
-//     const isValid = await isSignatureValid(
-//       requestBody,           // The request body as string
-//       signature,             // The signature from the header
-//       buyerPublicKey,        // Public key of the sender
-//       algorithm,             // The signing algorithm used
-//       headers                // The headers included in the signature
-//     );
-    
-//     if (!isValid) {
-//       return { valid: false, reason: 'Invalid signature' };
-//     }
-    
-//     return { valid: true };
-//   } catch (error) {
-//     console.error('Error verifying authorization header:', error);
-//     return { valid: false, reason: 'Error verifying authorization header: ' + error.message };
-//   }
-// }
-
-// // Helper function to validate the request payload
-// function validateRequestPayload(payload) {
-//   // Check if payload is present
-//   if (!payload) {
-//     return { valid: false, reason: 'Empty payload' };
-//   }
-  
-//   // Check if context is present
-//   if (!payload.context) {
-//     return { valid: false, reason: 'Context is required in the request payload' };
-//   }
-  
-//   // Check if BAP URI is present in context
-//   if (!payload.context.bap_uri) {
-//     return { valid: false, reason: 'BAP URI is required in the context' };
-//   }
-  
-//   // Check if message is present
-//   if (!payload.message) {
-//     return { valid: false, reason: 'Message is required in the request payload' };
-//   }
-  
-//   return { valid: true };
-// }
-
-// // Search endpoint implementation
-// app.post('/search', async (req, res) => {
-//   try {
-//     // Extract the authorization header
-//     const authHeader = req.headers.authorization;
-    
-//     // Convert the request body to a string for signature verification
-//     const requestBodyStr = JSON.stringify(req.body);
-    
-//     // Validate the request payload
-//     const payloadValidation = validateRequestPayload(req.body);
-    
-//     if (!payloadValidation.valid) {
-//       // If payload is invalid, return NACK with error details
-//       return res.status(400).json({
-//         message: {
-//           ack: {
-//             status: 'NACK',
-//             error: {
-//               type: 'CORE_ERROR',
-//               code: '3001',
-//               message: payloadValidation.reason
-//             }
-//           }
-//         }
-//       });
-//     }
-    
-//     // If authorization header is present, verify it
-//     if (authHeader) {
-//       const authVerification = await verifyAuthorizationHeader(authHeader, requestBodyStr);
-      
-//       if (!authVerification.valid) {
-//         // If authorization header is invalid, return NACK with error details
-//         return res.status(401).json({
-//           message: {
-//             ack: {
-//               status: 'NACK',
-//               error: {
-//                 type: 'SECURITY_ERROR',
-//                 code: '4001',
-//                 message: authVerification.reason
-//               }
-//             }
-//           }
-//         });
-//       }
-//     }
-    
-//     // If everything is valid, return ACK
-//     res.status(200).json({
-//       message: {
-//         ack: {
-//           status: 'ACK'
-//         }
-//       }
-//     });
-    
-//     // In a real implementation, you would process the search request here
-//     // This could involve querying your product catalog, filtering results, etc.
-//     // For now, we'll just log that the search request was received
-//     console.log('Received search request:', req.body);
-    
-//   } catch (error) {
-//     console.error('Error processing search request:', error);
-    
-//     // Return NACK for any internal errors
-//     res.status(500).json({
-//       message: {
-//         ack: {
-//           status: 'NACK',
-//           error: {
-//             type: 'SYSTEM_ERROR',
-//             code: '5001',
-//             message: 'Internal server error'
-//           }
-//         }
-//       }
-//     });
-//   }
-// });
-
-// // Health check endpoint
-// app.get('/health', (req, res) => {
-//   res.status(200).json({ status: 'UP', message: 'ONDC Seller Search Service is running' });
-// });
-
-// // Start the server
-// app.listen(config.port, () => {
-//   console.log(`ONDC Seller Search Service (${config.environment}) is running on port ${config.port}`);
-//   console.log(`Health check available at http://${config.hostname}:${config.port}/health`);
-//   console.log(`Search endpoint available at http://${config.hostname}:${config.port}/search`);
-//   console.log(`Log level: ${config.logLevel}`);
-// });
-
-
-
-const express = require('express');
-const { isSignatureValid } = require('ondc-crypto-sdk-nodejs');
-// const { config } = require('./config');
-const config = require('./config');
-
-console.log(config.port);
-
-const app = express();
-
-// Middleware to parse JSON requests
-app.use(express.json());
-
-// Public key from configuration
-const buyerPublicKey = config.buyerPublicKey;
-
-// Helper function to extract and parse the authorization header
-function parseAuthorizationHeader(authHeader) {
-  if (!authHeader) {
-    return null;
-  }
-  
-  const parts = authHeader.split(',');
-  const parsed = {};
-  
-  parts.forEach(part => {
-    const [key, value] = part.split('=').map(item => item.trim());
-    if (key && value) {
-      parsed[key.toLowerCase()] = value.replace(/"/g, '');
-    }
-  });
-  
-  return parsed;
-}
-
-// Helper function to verify the authorization header
-async function verifyAuthorizationHeader(authHeader, requestBody) {
+/**
+ * Creates an ONDC BPP Seller response to a Search API request
+ * This implementation supports:
+ * - Responding to catalog search requests
+ * - Providing seller information
+ * - Including product catalog details
+ * - BPP seller static terms publication
+ */
+async function createBppSearchResponse() {
   try {
-    const parsedHeader = parseAuthorizationHeader(authHeader);
+    // Generate unique IDs for the transaction
+    const transactionId = generateUniqueId();
+    const messageId = generateUniqueId();
+    const timestamp = new Date().toISOString();
     
-    if (!parsedHeader) {
-      return { valid: false, reason: 'Invalid authorization header format' };
-    }
+    // Create a search response body according to the ONDC Search API specification for BPP
+    const searchResponseBody = {
+      "context": {
+        "domain": "ONDC:RET10", // Grocery domain
+        "action": "on_search",
+        "country": "IND",
+        "city": "*", // Bangalore city code
+        "core_version": "1.2.0",
+        "bpp_id": "staging.99digicom.com", // Seller/BPP ID
+        "bpp_uri": "https://staging.99digicom.com", // Seller/BPP endpoint
+        "transaction_id": transactionId, // Should match the transaction_id from buyer's search request
+        "message_id": messageId,
+        "timestamp": timestamp
+      },
+      "message": {
+        "catalog": {
+          "bpp/descriptor": {
+            "name": "Sample Store",
+            "symbol": "https://sellerNP.com/images/logo.png",
+            "short_desc": "Grocery Store",
+            "long_desc": "Sample grocery store with a wide range of products",
+            "images": ["https://sellerNP.com/images/storefront.png"]
+          },
+          "bpp/providers": [
+            {
+              "id": "P1",
+              "descriptor": {
+                "name": "Sample Store",
+                "symbol": "https://sellerNP.com/images/logo.png",
+                "short_desc": "Grocery Store",
+                "long_desc": "Sample grocery store with a wide range of products",
+                "images": ["https://sellerNP.com/images/storefront.png"]
+              },
+              "ttl": "PT30M", // Time-to-live of 30 minutes for this catalog
+              "locations": [
+                {
+                  "id": "L1",
+                  "gps": "12.9715987,77.5945627", // Coordinates for Bangalore
+                  "address": {
+                    "street": "MG Road",
+                    "city": "Bangalore",
+                    "area_code": "560001",
+                    "state": "Karnataka"
+                  },
+                  "circle": {
+                    "gps": "12.9715987,77.5945627",
+                    "radius": {
+                      "unit": "km",
+                      "value": "10"
+                    }
+                  },
+                  "time": {
+                    "days": "1,2,3,4,5,6,7",
+                    "schedule": {
+                      "holidays": ["2023-08-15"],
+                      "frequency": "PT4H",
+                      "times": ["1100", "1900"]
+                    }
+                  }
+                }
+              ],
+              "items": [
+                {
+                  "id": "I1",
+                  "descriptor": {
+                    "name": "Whole Wheat Flour",
+                    "symbol": "https://sellerNP.com/images/wheat-flour.png",
+                    "short_desc": "Organic whole wheat flour",
+                    "long_desc": "Organic stone-ground whole wheat flour, 1kg pack",
+                    "images": ["https://sellerNP.com/images/wheat-flour-1.png", "https://sellerNP.com/images/wheat-flour-2.png"]
+                  },
+                  "price": {
+                    "currency": "INR",
+                    "value": "110.00",
+                    "maximum_value": "110.00"
+                  },
+                  "category_id": "Foodgrains",
+                  "fulfillment_id": "F1",
+                  "location_id": "L1",
+                  "matched": true,
+                  "@ondc/org/returnable": true,
+                  "@ondc/org/cancellable": true,
+                  "@ondc/org/return_window": "P7D", // 7-day return window
+                  "@ondc/org/seller_pickup_return": true,
+                  "@ondc/org/time_to_ship": "PT2D", // 2 days to ship
+                  "@ondc/org/available_on_cod": false,
+                  "@ondc/org/contact_details_consumer_care": "support@sellerNP.com, +919876543210",
+                  "tags": [
+                    {
+                      "code": "origin",
+                      "list": [
+                        {
+                          "code": "country",
+                          "value": "IND"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "I2",
+                  "descriptor": {
+                    "name": "Basmati Rice",
+                    "symbol": "https://sellerNP.com/images/basmati-rice.png",
+                    "short_desc": "Premium basmati rice",
+                    "long_desc": "Premium aged basmati rice, 5kg pack",
+                    "images": ["https://sellerNP.com/images/basmati-rice-1.png"]
+                  },
+                  "price": {
+                    "currency": "INR",
+                    "value": "450.00",
+                    "maximum_value": "450.00"
+                  },
+                  "category_id": "Foodgrains",
+                  "fulfillment_id": "F1",
+                  "location_id": "L1",
+                  "matched": true,
+                  "@ondc/org/returnable": true,
+                  "@ondc/org/cancellable": true,
+                  "@ondc/org/return_window": "P7D",
+                  "@ondc/org/seller_pickup_return": true,
+                  "@ondc/org/time_to_ship": "PT2D",
+                  "@ondc/org/available_on_cod": false,
+                  "@ondc/org/contact_details_consumer_care": "support@sellerNP.com, +919876543210"
+                }
+              ],
+              "fulfillments": [
+                {
+                  "id": "F1",
+                  "type": "Delivery",
+                  "tracking": true,
+                  "contact": {
+                    "phone": "+919876543210",
+                    "email": "support@sellerNP.com"
+                  }
+                }
+              ],
+              "tags": [
+                {
+                  "code": "bpp_terms",
+                  "list": [
+                    {
+                      "code": "static_terms",
+                      "value": "https://sellerNP.com/ondc/terms/seller_terms.html"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    };
+
+    // Generate authorization header for the search response
+    const authHeader = await createAuthorizationHeader({
+      body: JSON.stringify(searchResponseBody),
+      privateKey: privateKey,
+      subscriberId: "staging.99digicom.com", // BPP Seller Subscriber ID from ONDC registration
+      subscriberUniqueKeyId: "staging-99digicom-key-001", // BPP Seller Unique Key Id from ONDC registration
+    });
     
-    const { keyid, algorithm, headers, signature } = parsedHeader;
+    console.log("Generated Authorization Header for BPP Search Response:", authHeader);
+    console.log("BPP Search Response Body:", JSON.stringify(searchResponseBody, null, 2));
     
-    if (!keyid || !algorithm || !headers || !signature) {
-      return { valid: false, reason: 'Missing required fields in authorization header' };
-    }
+    // Example of how to send the search response to the buyer NP
+    console.log("\nExample usage with fetch API to respond to buyer:");
+    console.log(`fetch('https://buyerNP.com/ondc/on_search', {`);
+    console.log(`  method: 'POST',`);
+    console.log(`  headers: {`);
+    console.log(`    'Content-Type': 'application/json',`);
+    console.log(`    'Authorization': '${authHeader}'`);
+    console.log(`  },`);
+    console.log(`  body: JSON.stringify(${JSON.stringify(searchResponseBody)})`); 
+    console.log(`})`);
     
-    const isValid = await isSignatureValid(
-      requestBody,
-      signature,
-      buyerPublicKey,
-      algorithm,
-      headers
-    );
-    
-    if (!isValid) {
-      return { valid: false, reason: 'Invalid signature' };
-    }
-    
-    return { valid: true };
+    return {
+      responseBody: searchResponseBody,
+      authHeader: authHeader
+    };
   } catch (error) {
-    console.error('Error verifying authorization header:', error);
-    return { valid: false, reason: 'Error verifying authorization header: ' + error.message };
+    console.error("Error creating BPP search response:", error);
+    throw error;
   }
 }
 
-// Helper function to validate the request payload
-function validateRequestPayload(payload) {
-  if (!payload) {
-    return { valid: false, reason: 'Empty payload' };
-  }
-  
-  if (!payload.context) {
-    return { valid: false, reason: 'Context is required in the request payload' };
-  }
-  
-  if (!payload.context.bap_uri) {
-    return { valid: false, reason: 'BAP URI is required in the context' };
-  }
-  
-  if (!payload.message) {
-    return { valid: false, reason: 'Message is required in the request payload' };
-  }
-  
-  return { valid: true };
+/**
+ * Helper function to generate unique IDs for transactions and messages
+ */
+function generateUniqueId() {
+  return 'id-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
 }
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.status(200).json({
-    message: 'ONDC Seller Server is running',
-    service: 'ONDC Search Service',
-    version: '1.0.0',
-    endpoints: {
-      root: 'GET /',
-      health: 'GET /health',
-      search: 'POST /search'
-    },
-    status: 'operational',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'UP', 
-    message: 'ONDC Seller Search Service is running',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Search endpoint implementation
-app.post('/search', async (req, res) => {
+/**
+ * Alternative implementation for responding to a specific search request
+ * @param {Object} originalSearchRequest - The original search request received from the buyer
+ */
+async function respondToSearchRequest(originalSearchRequest) {
   try {
-    const authHeader = req.headers.authorization;
-    const requestBodyStr = JSON.stringify(req.body);
+    // Extract transaction ID and other context from original request
+    const { transaction_id, message_id } = originalSearchRequest.context;
+    const timestamp = new Date().toISOString();
     
-    const payloadValidation = validateRequestPayload(req.body);
-    
-    if (!payloadValidation.valid) {
-      return res.status(400).json({
-        message: {
-          ack: {
-            status: 'NACK',
-            error: {
-              type: 'CORE_ERROR',
-              code: '3001',
-              message: payloadValidation.reason
+    // Create a search response that references the original request
+    const searchResponseBody = {
+      "context": {
+        "domain": originalSearchRequest.context.domain,
+        "action": "on_search",
+        "country": originalSearchRequest.context.country,
+        "city": originalSearchRequest.context.city,
+        "core_version": originalSearchRequest.context.core_version,
+        "bpp_id": "staging.99digicom.com", // Your BPP ID
+        "bpp_uri": "https://staging.99digicom.com",
+        "transaction_id": transaction_id, // Use the same transaction_id as in the request
+        "message_id": generateUniqueId(), // Generate a new message_id for the response
+        "timestamp": timestamp,
+        // Reference to the original request
+        "bap_id": originalSearchRequest.context.bap_id,
+        "bap_uri": originalSearchRequest.context.bap_uri
+      },
+      "message": {
+        "catalog": {
+          "bpp/descriptor": {
+            "name": "Sample Store",
+            "symbol": "https://sellerNP.com/images/logo.png",
+            "short_desc": "Grocery Store"
+          },
+          "bpp/providers": [
+            {
+              "id": "P1",
+              "descriptor": {
+                "name": "Sample Store"
+              },
+              "items": [
+                // Filter items based on the search intent
+                // For example, if the search was for "Foodgrains" category
+                // only return items in that category
+              ]
             }
-          }
-        }
-      });
-    }
-    
-    if (authHeader) {
-      const authVerification = await verifyAuthorizationHeader(authHeader, requestBodyStr);
-      
-      if (!authVerification.valid) {
-        return res.status(401).json({
-          message: {
-            ack: {
-              status: 'NACK',
-              error: {
-                type: 'SECURITY_ERROR',
-                code: '4001',
-                message: authVerification.reason
-              }
-            }
-          }
-        });
-      }
-    }
-    
-    res.status(200).json({
-      message: {
-        ack: {
-          status: 'ACK'
+          ]
         }
       }
+    };
+
+    // Generate authorization header for the search response
+    const authHeader = await createAuthorizationHeader({
+      body: JSON.stringify(searchResponseBody),
+      privateKey: privateKey,
+      subscriberId: "staging.99digicom.com",
+      subscriberUniqueKeyId: "staging-99digicom-key-001",
     });
     
-    console.log('Received search request from buyer app:', {
-      context_id: req.body.context?.transaction_id,
-      bap_id: req.body.context?.bap_id,
-      bap_uri: req.body.context?.bap_uri,
-      timestamp: new Date().toISOString()
-    });
+    console.log("Response to specific search request:");
+    console.log("Authorization Header:", authHeader);
     
+    return {
+      responseBody: searchResponseBody,
+      authHeader: authHeader
+    };
   } catch (error) {
-    console.error('Error processing search request:', error);
-    
-    res.status(500).json({
-      message: {
-        ack: {
-          status: 'NACK',
-          error: {
-            type: 'SYSTEM_ERROR',
-            code: '5001',
-            message: 'Internal server error'
-          }
+    console.error("Error responding to search request:", error);
+    throw error;
+  }
+}
+
+/**
+ * Creates a BPP Search API response with the exact payload provided
+ */
+async function createExactPayloadBppSearchResponse() {
+  try {
+    // Use the exact payload provided
+    const searchResponseBody = {
+      "context": {
+        "domain": "ONDC:RET10",
+        "action": "search",
+        "country": "IND",
+        "city": "*",
+        "core_version": "1.2.0",
+        "bpp_id": "staging.99digicom.com",
+        "bpp_uri": " `https://staging.99digicom.com` ",
+        "transaction_id": "id-1758275614620-zmcg7ju",
+        "message_id": "id-1758275614620-0yc6fw5",
+        "timestamp": "2025-09-18T04:00:48.000Z"
+      },
+      "message": {
+        "catalog": {
+          "bpp/descriptor": {
+            "name": "Sample Store",
+            "symbol": " `https://sellerNP.com/images/logo.png` ",
+            "short_desc": "Grocery Store",
+            "long_desc": "Sample grocery store with a wide range of products",
+            "images": [" `https://sellerNP.com/images/storefront.png` "]
+          },
+          "bpp/providers": [
+            {
+              "id": "P1",
+              "descriptor": {
+                "name": "Sample Store",
+                "symbol": " `https://sellerNP.com/images/logo.png` ",
+                "short_desc": "Grocery Store",
+                "long_desc": "Sample grocery store with a wide range of products",
+                "images": [" `https://sellerNP.com/images/storefront.png` "]
+              },
+              "ttl": "PT30M",
+              "locations": [
+                {
+                  "id": "L1",
+                  "gps": "12.9715987,77.5945627",
+                  "address": {
+                    "street": "MG Road",
+                    "city": "Bangalore",
+                    "area_code": "560001",
+                    "state": "Karnataka"
+                  }
+                }
+              ],
+              "items": [
+                {
+                  "id": "I1",
+                  "descriptor": {
+                    "name": "Whole Wheat Flour",
+                    "symbol": " `https://sellerNP.com/images/wheat-flour.png` ",
+                    "short_desc": "Organic whole wheat flour",
+                    "long_desc": "Organic stone-ground whole wheat flour, 1kg pack",
+                    "images": [
+                      " `https://sellerNP.com/images/wheat-flour-1.png` ",
+                      " `https://sellerNP.com/images/wheat-flour-2.png` "
+                    ]
+                  },
+                  "price": {
+                    "currency": "INR",
+                    "value": "110.00",
+                    "maximum_value": "110.00"
+                  },
+                  "category_id": "Foodgrains",
+                  "fulfillment_id": "F1",
+                  "location_id": "L1"
+                }
+              ]
+            }
+          ]
         }
       }
+    };
+
+    // Generate authorization header for the search response
+    const authHeader = await createAuthorizationHeader({
+      body: JSON.stringify(searchResponseBody),
+      privateKey: privateKey,
+      subscriberId: "staging.99digicom.com", // BPP Seller Subscriber ID from ONDC registration
+      subscriberUniqueKeyId: "staging-99digicom-key-001", // BPP Seller Unique Key Id from ONDC registration
     });
+    
+    console.log("\nGenerated Authorization Header for Exact Payload BPP Search Response:", authHeader);
+    console.log("Exact Payload BPP Search Response Body:", JSON.stringify(searchResponseBody, null, 2));
+    
+    return {
+      responseBody: searchResponseBody,
+      authHeader: authHeader
+    };
+  } catch (error) {
+    console.error("Error creating exact payload BPP search response:", error);
+    throw error;
   }
+}
+
+// Export functions for external usage
+/**
+ * Creates a BPP Search response based on a specific request body
+ * @param {Object} searchRequestBody - The search request body
+ */
+async function createBppSearchFromRequest(searchRequestBody) {
+  try {
+    // Extract context information from the search request
+    const { context } = searchRequestBody;
+    const timestamp = new Date().toISOString();
+    const newMessageId = generateUniqueId();
+    
+    // Create response body structure
+    const searchResponseBody = {
+      "context": {
+        "domain": context.domain,
+        "action": "on_search",
+        "country": context.country,
+        "city": context.city,
+        "core_version": context.core_version,
+        "bpp_id": "staging.99digicom.com",
+        "bpp_uri": "https://staging.99digicom.com",
+        "transaction_id": context.transaction_id,
+        "message_id": newMessageId,
+        "timestamp": timestamp,
+        "ttl": context.ttl,
+        "bap_id": context.bap_id,
+        "bap_uri": context.bap_uri
+      },
+      "message": {
+        "catalog": {
+          "bpp/descriptor": {
+            "name": "Sample Store",
+            "symbol": "https://sellerNP.com/images/logo.png",
+            "short_desc": "Grocery Store",
+            "long_desc": "Sample grocery store with a wide range of products",
+            "images": ["https://sellerNP.com/images/storefront.png"]
+          },
+          "bpp/providers": [
+            {
+              "id": "P1",
+              "descriptor": {
+                "name": "Sample Store",
+                "symbol": "https://sellerNP.com/images/logo.png",
+                "short_desc": "Grocery Store",
+                "long_desc": "Sample grocery store with a wide range of products",
+                "images": ["https://sellerNP.com/images/storefront.png"]
+              },
+              "ttl": "PT30M",
+              "locations": [
+                {
+                  "id": "L1",
+                  "gps": "12.9715987,77.5945627",
+                  "address": {
+                    "street": "MG Road",
+                    "city": "Bangalore",
+                    "area_code": "560001",
+                    "state": "Karnataka"
+                  }
+                }
+              ],
+              "items": [
+                {
+                  "id": "I1",
+                  "descriptor": {
+                    "name": "Whole Wheat Flour",
+                    "symbol": "https://sellerNP.com/images/wheat-flour.png",
+                    "short_desc": "Organic whole wheat flour",
+                    "long_desc": "Organic stone-ground whole wheat flour, 1kg pack",
+                    "images": [
+                      "https://sellerNP.com/images/wheat-flour-1.png",
+                      "https://sellerNP.com/images/wheat-flour-2.png"
+                    ]
+                  },
+                  "price": {
+                    "currency": "INR",
+                    "value": "110.00",
+                    "maximum_value": "110.00"
+                  },
+                  "category_id": "Foodgrains",
+                  "fulfillment_id": "F1",
+                  "location_id": "L1"
+                },
+                {
+                  "id": "I2",
+                  "descriptor": {
+                    "name": "Rice Basmati",
+                    "symbol": "https://sellerNP.com/images/basmati-rice.png",
+                    "short_desc": "Premium Basmati Rice",
+                    "long_desc": "Long grain basmati rice, 5kg pack",
+                    "images": [
+                      "https://sellerNP.com/images/basmati-rice-1.png",
+                      "https://sellerNP.com/images/basmati-rice-2.png"
+                    ]
+                  },
+                  "price": {
+                    "currency": "INR",
+                    "value": "450.00",
+                    "maximum_value": "450.00"
+                  },
+                  "category_id": "Foodgrains",
+                  "fulfillment_id": "F1",
+                  "location_id": "L1"
+                }
+              ],
+              "fulfillments": [
+                {
+                  "id": "F1",
+                  "type": "Delivery",
+                  "tracking": true,
+                  "contact": {
+                    "phone": "+919876543210",
+                    "email": "support@sellerNP.com"
+                  }
+                }
+              ],
+              "tags": [
+                {
+                  "code": "bpp_terms",
+                  "list": [
+                    {
+                      "code": "static_terms",
+                      "value": "https://sellerNP.com/ondc/terms/seller_terms.html"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    };
+
+    // Generate authorization header for the search response
+    const authHeader = await createAuthorizationHeader({
+      body: JSON.stringify(searchResponseBody),
+      privateKey: privateKey,
+      subscriberId: "staging.99digicom.com",
+      subscriberUniqueKeyId: "staging-99digicom-key-001",
+    });
+    
+    console.log("Generated Authorization Header for Request-based BPP Search Response:", authHeader);
+    console.log("Request-based BPP Search Response Body:", JSON.stringify(searchResponseBody, null, 2));
+    
+    return {
+      responseBody: searchResponseBody,
+      authHeader: authHeader
+    };
+  } catch (error) {
+    console.error("Error creating BPP search response from request:", error);
+    throw error;
+  }
+}
+
+module.exports = {
+  createBppSearchResponse,
+  respondToSearchRequest,
+  createExactPayloadBppSearchResponse,
+  createBppSearchFromRequest
+};
+
+// Execute the main BPP search function
+createBppSearchResponse().then(() => {
+  // Optionally execute the exact payload example after the main search
+  // createExactPayloadBppSearchResponse();
 });
-
-// 404 Handler - SIMPLIFIED (No wildcard pattern)
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Endpoint not found',
-    message: `The requested endpoint ${req.originalUrl} does not exist`,
-    available_endpoints: ['GET /', 'GET /health', 'POST /search']
-  });
-});
-
-// Start the server
-const PORT = config.port || 3000;
-const HOSTNAME = config.hostname || 'localhost';
-
-app.listen(PORT, HOSTNAME, () => {
-  console.log(`ONDC Seller Search Service (${config.environment}) is running on port ${PORT}`);
-  console.log(`Server URL: http://${HOSTNAME}:${PORT}`);
-  console.log(`Health check available at http://${HOSTNAME}:${PORT}/health`);
-  console.log(`Search endpoint available at http://${HOSTNAME}:${PORT}/search`);
-  console.log(`Log level: ${config.logLevel}`);
-});
-
-module.exports = app;
