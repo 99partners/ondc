@@ -39,4 +39,5 @@ if (env === 'staging') {
 }
 
 // Freeze the configuration to prevent modifications
-exports.config = Object.freeze(config);
+module.exports = Object.freeze(config);
+// exports.config = Object.freeze(config);
