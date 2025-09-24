@@ -188,7 +188,6 @@
 //   console.log(`Log level: ${config.logLevel}`);
 // });
 
-
 const express = require('express');
 const { isSignatureValid } = require('ondc-crypto-sdk-nodejs');
 const { config } = require('./config');
@@ -198,7 +197,7 @@ const app = express();
 // Middleware to parse JSON requests
 app.use(express.json());
 
-// Public key from configuration (in real-world use registry or seller config)
+// Public key from configuration
 const buyerPublicKey = config.buyerPublicKey;
 
 // Helper function to extract and parse the authorization header
@@ -207,14 +206,12 @@ function parseAuthorizationHeader(authHeader) {
     return null;
   }
   
-  // Authorization header format: 'Signature keyId="",algorithm="",headers="",signature=""'
   const parts = authHeader.split(',');
   const parsed = {};
   
   parts.forEach(part => {
     const [key, value] = part.split('=').map(item => item.trim());
     if (key && value) {
-      // Remove quotes from value
       parsed[key.toLowerCase()] = value.replace(/"/g, '');
     }
   });
@@ -225,27 +222,24 @@ function parseAuthorizationHeader(authHeader) {
 // Helper function to verify the authorization header
 async function verifyAuthorizationHeader(authHeader, requestBody) {
   try {
-    // Parse the authorization header
     const parsedHeader = parseAuthorizationHeader(authHeader);
     
     if (!parsedHeader) {
       return { valid: false, reason: 'Invalid authorization header format' };
     }
     
-    // Extract required fields from the parsed header
     const { keyid, algorithm, headers, signature } = parsedHeader;
     
     if (!keyid || !algorithm || !headers || !signature) {
       return { valid: false, reason: 'Missing required fields in authorization header' };
     }
     
-    // Verify the signature using the ONDC Crypto SDK
     const isValid = await isSignatureValid(
-      requestBody,           // The request body as string
-      signature,             // The signature from the header
-      buyerPublicKey,        // Public key of the sender
-      algorithm,             // The signing algorithm used
-      headers                // The headers included in the signature
+      requestBody,
+      signature,
+      buyerPublicKey,
+      algorithm,
+      headers
     );
     
     if (!isValid) {
@@ -261,22 +255,18 @@ async function verifyAuthorizationHeader(authHeader, requestBody) {
 
 // Helper function to validate the request payload
 function validateRequestPayload(payload) {
-  // Check if payload is present
   if (!payload) {
     return { valid: false, reason: 'Empty payload' };
   }
   
-  // Check if context is present
   if (!payload.context) {
     return { valid: false, reason: 'Context is required in the request payload' };
   }
   
-  // Check if BAP URI is present in context
   if (!payload.context.bap_uri) {
     return { valid: false, reason: 'BAP URI is required in the context' };
   }
   
-  // Check if message is present
   if (!payload.message) {
     return { valid: false, reason: 'Message is required in the request payload' };
   }
@@ -305,25 +295,19 @@ app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'UP', 
     message: 'ONDC Seller Search Service is running',
-    timestamp: new Date().toISOString(),
-    service: 'ondc-search-service'
+    timestamp: new Date().toISOString()
   });
 });
 
 // Search endpoint implementation
 app.post('/search', async (req, res) => {
   try {
-    // Extract the authorization header
     const authHeader = req.headers.authorization;
-    
-    // Convert the request body to a string for signature verification
     const requestBodyStr = JSON.stringify(req.body);
     
-    // Validate the request payload
     const payloadValidation = validateRequestPayload(req.body);
     
     if (!payloadValidation.valid) {
-      // If payload is invalid, return NACK with error details
       return res.status(400).json({
         message: {
           ack: {
@@ -338,12 +322,10 @@ app.post('/search', async (req, res) => {
       });
     }
     
-    // If authorization header is present, verify it
     if (authHeader) {
       const authVerification = await verifyAuthorizationHeader(authHeader, requestBodyStr);
       
       if (!authVerification.valid) {
-        // If authorization header is invalid, return NACK with error details
         return res.status(401).json({
           message: {
             ack: {
@@ -359,7 +341,6 @@ app.post('/search', async (req, res) => {
       }
     }
     
-    // If everything is valid, return ACK
     res.status(200).json({
       message: {
         ack: {
@@ -368,9 +349,6 @@ app.post('/search', async (req, res) => {
       }
     });
     
-    // In a real implementation, you would process the search request here
-    // This could involve querying your product catalog, filtering results, etc.
-    // For now, we'll just log that the search request was received
     console.log('Received search request from buyer app:', {
       context_id: req.body.context?.transaction_id,
       bap_id: req.body.context?.bap_id,
@@ -381,7 +359,6 @@ app.post('/search', async (req, res) => {
   } catch (error) {
     console.error('Error processing search request:', error);
     
-    // Return NACK for any internal errors
     res.status(500).json({
       message: {
         ack: {
@@ -397,33 +374,12 @@ app.post('/search', async (req, res) => {
   }
 });
 
-// Handle 404 - Route not found (FIXED: Use proper wildcard pattern)
+// 404 Handler - SIMPLIFIED (No wildcard pattern)
 app.use((req, res) => {
   res.status(404).json({
     error: 'Endpoint not found',
     message: `The requested endpoint ${req.originalUrl} does not exist`,
-    available_endpoints: {
-      root: 'GET /',
-      health: 'GET /health',
-      search: 'POST /search'
-    }
-  });
-});
-
-// Error handling middleware
-app.use((error, req, res, next) => {
-  console.error('Unhandled error:', error);
-  res.status(500).json({
-    message: {
-      ack: {
-        status: 'NACK',
-        error: {
-          type: 'SYSTEM_ERROR',
-          code: '5000',
-          message: 'Unexpected server error'
-        }
-      }
-    }
+    available_endpoints: ['GET /', 'GET /health', 'POST /search']
   });
 });
 
