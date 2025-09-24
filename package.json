@@ -2,12 +2,13 @@
   "name": "ondc-seller-search",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",
+  "main": "main-server.js",
   "scripts": {
     "test": "node test-search.js",
-    "start": "node server.js",
-    "start:staging": "NODE_ENV=staging node server.js",
-    "test-context": "node test-search-with-context.js"
+    "start": "node main-server.js",
+    "start:staging": "NODE_ENV=staging node main-server.js",
+    "test-context": "node test-search-with-context.js",
+    "test-main-server": "node test-main-server.js"
   },
   "keywords": [],
   "author": "",

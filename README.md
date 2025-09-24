@@ -1,113 +1,142 @@
 # ONDC Seller Search Service
 
-This service implements the ONDC (Open Network for Digital Commerce) seller search functionality.
-
-## Features
-- Request validation for ONDC search requests
-- Authorization header verification
-- Support for multiple environments (development and staging)
+This project implements an ONDC (Open Network for Digital Commerce) Seller Search Service that handles search requests from buyers according to ONDC specifications.
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js (v14 or higher recommended)
-- npm
+- Node.js (version 14 or higher)
+- npm (Node Package Manager)
 
 ### Installation
 
 1. Clone the repository
-2. Navigate to the project directory
-3. Install dependencies
+2. Install dependencies
 
 ```bash
 npm install
 ```
 
-### Running the Service
+## Project Structure
 
-#### Localhost (Development Environment)
-To run the service in the development environment (localhost):
+- `main-server.js` - Main server implementation with Express
+- `utils/schema-validator.js` - Schema validation utilities
+- `schemas/search-schema.js` - JSON schema definition for search requests
+- `test-schema-validation.js` - Schema validation test cases
+- `test-main-server.js` - Server integration tests
+- `test-search-with-context.js` - Context-specific search tests
+- `test-search.js` - Basic search tests
+
+## Schema Validation
+
+The server includes comprehensive JSON schema validation for ONDC search request messages. This validation ensures that all incoming requests adhere to the required structure and format.
+
+### Validation Coverage
+- Message structure validation (presence of context and message fields)
+- Intent validation (required fields and data types)
+- Tags validation (with specific requirements based on tag codes)
+- Timestamp format validation (RFC 3339)
+- Payload type validation for specific tags
+
+### Schema Definition
+The schema is defined in `schemas/search-schema.js` and includes detailed validation rules for:
+- `intent` - The search intent structure
+- `payment` - Payment details structure
+- `tags` - List of tags with conditional validation based on `code` values
+
+### Validation Logic
+The validation utility functions are implemented in `utils/schema-validator.js` and include:
+- `isValidRFC3339` - Validates timestamp format
+- `validateTagItem` - Validates individual tag items
+- `validateTag` - Validates a list of tags
+- `validateSearchIntent` - Validates the search message intent
+- `validateSearchMessage` - Validates the entire search message
+
+## Server Implementation
+
+The ONDC seller search service is implemented in `main-server.js`, which provides a lightweight Express server that handles search requests according to ONDC specifications.
+
+### Key Features
+- Health check endpoint at `/health`
+- Search endpoint at `/search` that immediately returns an ACK when a valid payload is received
+- Comprehensive error handling with appropriate NACK responses
+- Detailed request logging
+
+### Search Endpoint Behavior
+The `/search` endpoint follows these rules:
+- Returns an ACK response with status 200 when a valid payload is received
+- Returns a NACK response with appropriate error code and message when validation fails for:
+  - Empty request payload
+  - Missing context
+  - Missing BAP URI in context
+  - Missing message
+- Returns appropriate error responses for server errors
+
+## Testing the Service
+
+### Schema Validation Tests
+To run schema validation tests:
+
+```bash
+npm run test-schema
+```
+
+This will execute `test-schema-validation.js` which includes test cases for:
+- Valid search message
+- Missing intent
+- Invalid tag code
+- Invalid timestamp format
+- Invalid payload type
+
+### Server Integration Tests
+To run tests against the main server implementation:
+
+```bash
+npm run test-main-server
+```
+
+This will execute `test-main-server.js` which includes tests for:
+- Health check endpoint
+- Valid search payload with authorization
+- Missing context validation
+- Missing message validation
+
+### Context-specific Tests
+To run tests with specific context configurations:
+
+```bash
+npm run test-context
+```
+
+## Starting the Server
+
+To start the server in development mode:
 
 ```bash
 npm start
 ```
 
-This will start the service on port 3000 with localhost as the hostname.
-
-#### Staging Environment
-To run the service in the staging environment (staging.99digicom.com):
+To start the server in staging mode:
 
 ```bash
 npm run start:staging
 ```
 
-This will start the service with the staging configuration, using staging.99digicom.com as the hostname.
-
-## Environment Configuration
-
-The service uses environment-specific configuration defined in `config.js`:
-
-### Development (localhost)
-- Port: 3000 (can be overridden with PORT environment variable)
-- Hostname: localhost
-- Environment: development
-- Log Level: debug
-- Buyer Public Key: Default mock key (can be overridden with BUYER_PUBLIC_KEY environment variable)
-
-### Staging (staging.99digicom.com)
-- Port: (uses PORT environment variable or defaults to 3000)
-- Hostname: staging.99digicom.com
-- Environment: staging
-- Log Level: info
-- Buyer Public Key: Default mock key (can be overridden with BUYER_PUBLIC_KEY environment variable)
-
-### Environment Variables
-You can override certain configuration values using environment variables:
-- `NODE_ENV`: Set to 'development' or 'staging' to switch environments
-- `PORT`: Override the port number
-- `BUYER_PUBLIC_KEY`: Override the buyer public key
+The server will run on port 3000 by default and will log incoming requests and validation results. It will immediately respond with ACK when a valid payload is received, or NACK with error details otherwise.
 
 ## API Endpoints
 
 ### Health Check
-```
-GET /health
-```
-Returns the current status of the service.
+- **URL**: `/health`
+- **Method**: `GET`
+- **Description**: Checks if the server is running
+- **Response**: `{ "status": "UP" }` with status code 200
 
 ### Search
-```
-POST /search
-```
-Accepts ONDC search requests with proper validation and authorization.
-
-### Testing the Service
-
-To test the ONDC Seller Search Service, you can use the provided test scripts:
-
-1. **General Tests**: The `test-search.js` script sends various test cases to the service and validates the responses.
-
-```bash
-npm run test
-```
-
-2. **Custom Context Structure Test**: The `test-search-with-context.js` script demonstrates how to send requests with the specific context structure provided for the buyer application.
-
-```bash
-node test-search-with-context.js
-```
-
-This script uses the exact context and message structure specified, including:
-- Domain: ONDC:RET10
-- Action: search
-- Country: IND
-- City: std:080
-- Core version: 1.2.0
-- Buyer information: buyerNP.com
-- Transaction details
-- Payment information
-- Tags including catalog_full and bap_terms
-
-## Notes
-- In a production environment, you would want to fetch public keys from the ONDC registry instead of using hardcoded values.
-- Always keep your configuration secure, especially in production environments.
+- **URL**: `/search`
+- **Method**: `POST`
+- **Description**: Accepts ONDC search requests with proper validation
+- **Request Format**: JSON payload with `context` and `message` fields
+- **Response**: ACK/NACK message based on validation results
+- **Valid Response**: `{ "message": { "ack": { "status": "ACK" } } }` with status code 200
+- **Error Response**: `{ "message": { "ack": { "status": "NACK", "error": { ... } } } }` with appropriate status code
