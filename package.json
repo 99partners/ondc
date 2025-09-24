@@ -2,11 +2,12 @@
   "name": "ondc-seller-search",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js",
-    "start:staging": "NODE_ENV=staging node index.js"
+    "test": "node test-search.js",
+    "start": "node server.js",
+    "start:staging": "NODE_ENV=staging node server.js",
+    "test-context": "node test-search-with-context.js"
   },
   "keywords": [],
   "author": "",

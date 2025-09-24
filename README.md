@@ -81,12 +81,32 @@ POST /search
 ```
 Accepts ONDC search requests with proper validation and authorization.
 
-## Testing
-You can run the tests using the following command:
+### Testing the Service
+
+To test the ONDC Seller Search Service, you can use the provided test scripts:
+
+1. **General Tests**: The `test-search.js` script sends various test cases to the service and validates the responses.
 
 ```bash
-node test-search.js
+npm run test
 ```
+
+2. **Custom Context Structure Test**: The `test-search-with-context.js` script demonstrates how to send requests with the specific context structure provided for the buyer application.
+
+```bash
+node test-search-with-context.js
+```
+
+This script uses the exact context and message structure specified, including:
+- Domain: ONDC:RET10
+- Action: search
+- Country: IND
+- City: std:080
+- Core version: 1.2.0
+- Buyer information: buyerNP.com
+- Transaction details
+- Payment information
+- Tags including catalog_full and bap_terms
 
 ## Notes
 - In a production environment, you would want to fetch public keys from the ONDC registry instead of using hardcoded values.
