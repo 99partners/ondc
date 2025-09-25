@@ -43,6 +43,11 @@ const config = {
       s3Bucket: process.env.AWS_S3_BUCKET || ''
     }
   },
+
+  // ONDC Registry Configuration
+  registry: {
+    url: process.env.REGISTRY_URL || 'https://registry.ondc.org'
+  },
   
   // Logging Configuration
   logging: {

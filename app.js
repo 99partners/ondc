@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const config = require('./config');
 const searchRoutes = require('./routes/search');
 const healthRoutes = require('./routes/health');
+const registryRoutes = require('./routes/registry');
 
 const app = express();
 
@@ -48,6 +49,8 @@ app.use((req, res, next) => {
 
 // Mount search routes at root to expose /search
 app.use('/', searchRoutes);
+// Registry helper routes
+app.use('/', registryRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
