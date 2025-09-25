@@ -1,0 +1,23 @@
+{
+  "info": {
+    "name": "ONDC BPP",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "POST /search",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "http://localhost:3000/search", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["search"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"context\": {\n    \"domain\": \"nic2004:52110\",\n    \"country\": \"IND\",\n    \"city\": \"std:080\",\n    \"action\": \"search\",\n    \"core_version\": \"1.2.0\",\n    \"bap_id\": \"buyer.app.example\",\n    \"bap_uri\": \"https://buyer.example.com/on_search\",\n    \"transaction_id\": \"tx-12345\",\n    \"message_id\": \"msg-12345\",\n    \"timestamp\": \"2025-09-25T10:00:00Z\"\n  },\n  \"message\": { \n    \"intent\": { \n      \"item\": { \n        \"descriptor\": { \"name\": \"laptop\" } \n      } \n    } \n  }\n}"
+        }
+      },
+      "response": []
+    }
+  ]
+}
+
+

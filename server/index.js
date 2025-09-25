@@ -2,13 +2,17 @@ const express = require('express');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const cors = require('cors');
+const bodyParser = require('body-parser');
 const SearchData = require('./models/searchData');
+const { bpp, server } = require('./config');
+const { validateSearchContext, buildOnSearchResponse } = require('./services/bppService');
 
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+app.use(CORS_ORIGINS.length ? cors({ origin: CORS_ORIGINS }) : cors());
+app.use(bodyParser.json({ limit: '5mb' }));
 
-const PORT = process.env.PORT || 3000;
+const PORT = server.port;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const DEFAULT_DEV_URI = 'mongodb://localhost:27017/sellerApp';
 const DEFAULT_PROD_URI = 'mongodb+srv://99partnersin:99Partnersin@sellerondc.ygkwjfx.mongodb.net/ondcSeller?retryWrites=true&w=majority&appName=sellerONDC';
@@ -28,7 +32,7 @@ app.get('/debug/db-status', (req, res) => {
 });
 
 // ONDC Retail: Receive buyer app search and store payload
-app.post('/search', async (req, res) => {
+app.post('/search', async (req, res, next) => {
   try {
     const payload = req.body;
 
@@ -41,18 +45,14 @@ app.post('/search', async (req, res) => {
     }
 
     const context = payload.context || {};
+    const intent = payload.message?.intent || {};
 
     // Basic context validations per ONDC retail search
-    if (!context || context.action !== 'search') {
+    const validationError = validateSearchContext(context);
+    if (validationError) {
       return res.status(200).json({
         message: { ack: { status: 'NACK' } },
-        error: { code: 'invalid_context', message: 'context.action must be "search"' }
-      });
-    }
-    if (!context.bap_id || !context.bap_uri) {
-      return res.status(200).json({
-        message: { ack: { status: 'NACK' } },
-        error: { code: 'invalid_context', message: 'Missing bap_id or bap_uri in context' }
+        error: { code: 'invalid_context', message: validationError }
       });
     }
 
@@ -91,21 +91,14 @@ app.post('/search', async (req, res) => {
       });
     }
 
-    // ACK (accepted for processing)
-    return res.status(202).json({
-      message: { ack: { status: 'ACK' } },
-      bpp_id: BPP_ID,
-      bpp_uri: BPP_URI,
-      transaction_id: context.transaction_id,
-      message_id: context.message_id
-    });
+    // Build mock ONDC-compliant catalog and respond inline (simple mode)
+    const responsePayload = buildOnSearchResponse(context, intent);
+
+    // Swap caller/receiver ids in context if needed is covered in builder (adds bpp_id/uri)
+    return res.status(200).json(responsePayload);
   } catch (err) {
     console.error('Error in /search:', err);
-    // Any error → NACK
-    return res.status(200).json({
-      message: { ack: { status: 'NACK' } },
-      error: { code: 'internal_error', message: err.message }
-    });
+    return next(err);
   }
 });
 
@@ -122,5 +115,15 @@ mongoose.connect(MONGODB_URI)
 });
 
 module.exports = { app };
+
+// Global error handler
+// Placeholder: plug signature verification earlier in the chain when implementing
+app.use((err, req, res, next) => {
+  const status = err.status || 500;
+  res.status(status).json({
+    message: { ack: { status: 'NACK' } },
+    error: { code: 'internal_error', message: err.message || 'Server error' }
+  });
+});
 
 
