@@ -5,7 +5,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const SearchData = require('./models/searchData');
 const { bpp, server } = require('./config');
-const { validateSearchContext, buildOnSearchResponse, deriveCatalogForDomain, putCatalog, getCatalog } = require('./services/bppService');
+const { validateSearchContext, putCatalog, getCatalog } = require('./services/bppService');
 
 const app = express();
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -46,7 +46,6 @@ app.post('/search', async (req, res, next) => {
 
     const context = payload.context || {};
     const intent = payload.message?.intent || {};
-    const responseMode = payload.message?.response?.mode || 'inline'; // 'inline' | 'link'
 
     // Basic context validations per ONDC retail search
     const validationError = validateSearchContext(context);
@@ -92,27 +91,8 @@ app.post('/search', async (req, res, next) => {
       });
     }
 
-    // Build mock catalog
-    const onSearch = buildOnSearchResponse(context, intent);
-
-    if (responseMode === 'link') {
-      const { token, expiresAt } = putCatalog(context.transaction_id, onSearch, 300);
-      return res.status(200).json({
-        context: onSearch.context,
-        message: {
-          catalog: {
-            descriptor: { name: 'Catalog Link' }
-          },
-          link: {
-            url: `${bpp.uri}/catalog/${encodeURIComponent(context.transaction_id)}?token=${token}`,
-            valid_till: new Date(expiresAt).toISOString()
-          }
-        }
-      });
-    }
-
-    // Inline
-    return res.status(200).json(onSearch);
+    // Only ACK on successful receipt/storage
+    return res.status(202).json({ message: { ack: { status: 'ACK' } } });
   } catch (err) {
     console.error('Error in /search:', err);
     return next(err);
