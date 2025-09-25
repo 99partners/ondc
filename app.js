@@ -30,7 +30,24 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/health', healthRoutes);
-app.use('/protocol/v1', searchRoutes);
+
+// Restrict allowed host in production
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    const hostHeader = req.headers.host || '';
+    const incomingHost = hostHeader.split(':')[0];
+    if (incomingHost !== config.domain) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Invalid host'
+      });
+    }
+  }
+  next();
+});
+
+// Mount search routes at root to expose /search
+app.use('/', searchRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
