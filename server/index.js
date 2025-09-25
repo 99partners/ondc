@@ -24,15 +24,30 @@ app.get('/health', (req, res) => res.send('OK'));
 // ONDC Retail: Receive buyer app search and store payload
 app.post('/search', async (req, res) => {
   try {
-    const payload = req.body || {};
+    const payload = req.body;
+
+    // No payload received → NACK
+    if (!payload || typeof payload !== 'object') {
+      return res.status(200).json({
+        message: { ack: { status: 'NACK' } },
+        error: { code: 'bad_request', message: 'Empty or invalid payload' }
+      });
+    }
+
     const context = payload.context || {};
 
     // Basic context validations per ONDC retail search
     if (!context || context.action !== 'search') {
-      return res.status(400).json({ message: 'Invalid context.action; expected "search"' });
+      return res.status(200).json({
+        message: { ack: { status: 'NACK' } },
+        error: { code: 'invalid_context', message: 'context.action must be "search"' }
+      });
     }
     if (!context.bap_id || !context.bap_uri) {
-      return res.status(400).json({ message: 'Missing bap_id or bap_uri in context' });
+      return res.status(200).json({
+        message: { ack: { status: 'NACK' } },
+        error: { code: 'invalid_context', message: 'Missing bap_id or bap_uri in context' }
+      });
     }
 
     // Persist the incoming payload for audit/traceability
@@ -54,10 +69,9 @@ app.post('/search', async (req, res) => {
       source: 'buyer-app'
     });
 
-    // As per spec, ACK with 202. An optional minimal on_search trigger
-    // can be implemented separately; here we only store the incoming payload.
+    // ACK (accepted for processing)
     return res.status(202).json({
-      message: 'Search received and stored',
+      message: { ack: { status: 'ACK' } },
       bpp_id: BPP_ID,
       bpp_uri: BPP_URI,
       transaction_id: context.transaction_id,
@@ -65,7 +79,11 @@ app.post('/search', async (req, res) => {
     });
   } catch (err) {
     console.error('Error in /search:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    // Any error → NACK
+    return res.status(200).json({
+      message: { ack: { status: 'NACK' } },
+      error: { code: 'internal_error', message: err.message }
+    });
   }
 });
 
