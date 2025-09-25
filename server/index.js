@@ -6,7 +6,7 @@ const SearchData = require('./models/searchData');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -20,6 +20,12 @@ const BPP_URI = process.env.BPP_URI || 'https://staging.99digicom.com';
 
 // Health
 app.get('/health', (req, res) => res.send('OK'));
+
+// DB status for debugging
+app.get('/debug/db-status', (req, res) => {
+  const state = mongoose.connection.readyState; // 0=disconnected,1=connected,2=connecting,3=disconnecting
+  res.json({ readyState: state });
+});
 
 // ONDC Retail: Receive buyer app search and store payload
 app.post('/search', async (req, res) => {
@@ -53,7 +59,7 @@ app.post('/search', async (req, res) => {
     // Persist the incoming payload for audit/traceability
     const queryName = payload?.message?.intent?.item?.descriptor?.name || payload?.message?.intent?.category?.descriptor?.name || '';
 
-    await SearchData.create({
+    const docToCreate = {
       fullPayload: payload,
       domain: context.domain,
       country: context.country,
@@ -67,7 +73,23 @@ app.post('/search', async (req, res) => {
       action: context.action,
       query: queryName,
       source: 'buyer-app'
-    });
+    };
+
+    // Log size info to help debug Atlas limits
+    try {
+      const created = await SearchData.create(docToCreate);
+      console.log('Saved /search payload:', {
+        _id: created._id.toString(),
+        transaction_id: created.transaction_id,
+        message_id: created.message_id
+      });
+    } catch (dbErr) {
+      console.error('Mongo save failed:', dbErr.message);
+      return res.status(200).json({
+        message: { ack: { status: 'NACK' } },
+        error: { code: 'db_error', message: dbErr.message }
+      });
+    }
 
     // ACK (accepted for processing)
     return res.status(202).json({
