@@ -5,7 +5,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const SearchData = require('./models/searchData');
 const { bpp, server } = require('./config');
-const { validateSearchContext, buildOnSearchResponse } = require('./services/bppService');
+const { validateSearchContext, buildOnSearchResponse, deriveCatalogForDomain, putCatalog, getCatalog } = require('./services/bppService');
 
 const app = express();
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -46,6 +46,7 @@ app.post('/search', async (req, res, next) => {
 
     const context = payload.context || {};
     const intent = payload.message?.intent || {};
+    const responseMode = payload.message?.response?.mode || 'inline'; // 'inline' | 'link'
 
     // Basic context validations per ONDC retail search
     const validationError = validateSearchContext(context);
@@ -91,15 +92,41 @@ app.post('/search', async (req, res, next) => {
       });
     }
 
-    // Build mock ONDC-compliant catalog and respond inline (simple mode)
-    const responsePayload = buildOnSearchResponse(context, intent);
+    // Build mock catalog
+    const onSearch = buildOnSearchResponse(context, intent);
 
-    // Swap caller/receiver ids in context if needed is covered in builder (adds bpp_id/uri)
-    return res.status(200).json(responsePayload);
+    if (responseMode === 'link') {
+      const { token, expiresAt } = putCatalog(context.transaction_id, onSearch, 300);
+      return res.status(200).json({
+        context: onSearch.context,
+        message: {
+          catalog: {
+            descriptor: { name: 'Catalog Link' }
+          },
+          link: {
+            url: `${bpp.uri}/catalog/${encodeURIComponent(context.transaction_id)}?token=${token}`,
+            valid_till: new Date(expiresAt).toISOString()
+          }
+        }
+      });
+    }
+
+    // Inline
+    return res.status(200).json(onSearch);
   } catch (err) {
     console.error('Error in /search:', err);
     return next(err);
   }
+});
+
+// Authorized catalog download endpoint for link-mode
+app.get('/catalog/:transactionId', (req, res) => {
+  const { transactionId } = req.params;
+  const { token } = req.query;
+  const entry = getCatalog(transactionId);
+  if (!entry) return res.status(404).json({ message: 'Not found or expired' });
+  if (!token || token !== entry.token) return res.status(403).json({ message: 'Forbidden' });
+  res.json(entry.data);
 });
 
 // Connect DB and start server
