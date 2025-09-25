@@ -3,6 +3,8 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const fs = require('fs');
+const path = require('path');
 const SearchData = require('./models/searchData');
 const { bpp, server } = require('./config');
 const { validateSearchContext, putCatalog, getCatalog } = require('./services/bppService');
@@ -30,6 +32,14 @@ app.get('/debug/db-status', (req, res) => {
   const state = mongoose.connection.readyState; // 0=disconnected,1=connected,2=connecting,3=disconnecting
   res.json({ readyState: state });
 });
+
+// Ensure fallback storage directory exists
+const FALLBACK_DIR = path.join(__dirname, 'fallback_store');
+try {
+  if (!fs.existsSync(FALLBACK_DIR)) fs.mkdirSync(FALLBACK_DIR, { recursive: true });
+} catch (e) {
+  console.error('Failed to initialize fallback directory:', e.message);
+}
 
 // ONDC Retail: Receive buyer app search and store payload
 app.post('/search', async (req, res, next) => {
@@ -85,10 +95,19 @@ app.post('/search', async (req, res, next) => {
       });
     } catch (dbErr) {
       console.error('Mongo save failed:', dbErr.message);
-      return res.status(200).json({
-        message: { ack: { status: 'NACK' } },
-        error: { code: 'db_error', message: dbErr.message }
-      });
+      // Fallback to filesystem storage
+      try {
+        const filename = `${Date.now()}-${context.transaction_id || 'no-tx'}.json`;
+        const filepath = path.join(FALLBACK_DIR, filename);
+        fs.writeFileSync(filepath, JSON.stringify({ receivedAt: new Date().toISOString(), payload }, null, 2));
+        console.log('Stored payload to fallback file:', filepath);
+      } catch (fileErr) {
+        console.error('Fallback file write failed:', fileErr.message);
+        return res.status(200).json({
+          message: { ack: { status: 'NACK' } },
+          error: { code: 'storage_error', message: `DB and file save failed: ${dbErr.message}; ${fileErr.message}` }
+        });
+      }
     }
 
     // Only ACK on successful receipt/storage
