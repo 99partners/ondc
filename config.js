@@ -1,43 +1,54 @@
-// Configuration file for different environments
+require('dotenv').config();
 
-// Helper function to safely get environment variables with defaults
-function getEnv(key, defaultValue) {
-  const value = process.env[key];
-  return value !== undefined ? value : defaultValue;
-}
-
-// Default configuration for localhost
-const defaultConfig = {
-  port: parseInt(getEnv('PORT', '3000'), 10),
-  hostname: 'localhost',
-  environment: 'development',
-  logLevel: 'debug',
-  // Mock public key for demonstration - in production, fetch from ONDC registry
-  buyerPublicKey: getEnv('BUYER_PUBLIC_KEY', 'T9e7d6aNJD1D90Y9qETlJGg0xLr0IuTKuMv6yg51CrwSxGy4nVCuYiZNz9nPVJOxUparuh3rKvj9mlyVzFRvrg=='),
-  // Other default configuration values can be added here
+const config = {
+  // Server Configuration
+  port: process.env.PORT || 3000,
+  nodeEnv: process.env.NODE_ENV || 'development',
+  domain: process.env.DOMAIN || 'staging.99digicom.com',
+  
+  // ONDC Protocol Configuration
+  ondc: {
+    version: process.env.ONDC_VERSION || '2.0.1',
+    domain: process.env.ONDC_DOMAIN || 'ONDC:RET10',
+    country: process.env.ONDC_COUNTRY || 'IND',
+    city: process.env.ONDC_CITY || 'std:080',
+    sellerId: process.env.ONDC_SELLER_ID || '99digicom-seller',
+    sellerName: process.env.ONDC_SELLER_NAME || '99DigiCom Seller'
+  },
+  
+  // API Configuration
+  api: {
+    timeout: parseInt(process.env.API_TIMEOUT) || 30000,
+    maxSearchResults: parseInt(process.env.MAX_SEARCH_RESULTS) || 50
+  },
+  
+  // Database Configuration
+  database: {
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || 5432,
+    name: process.env.DB_NAME || 'ondc_seller',
+    user: process.env.DB_USER || '',
+    password: process.env.DB_PASSWORD || ''
+  },
+  
+  // External Services
+  services: {
+    firebase: {
+      projectId: process.env.FIREBASE_PROJECT_ID || ''
+    },
+    aws: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      region: process.env.AWS_REGION || 'us-east-1',
+      s3Bucket: process.env.AWS_S3_BUCKET || ''
+    }
+  },
+  
+  // Logging Configuration
+  logging: {
+    level: process.env.LOG_LEVEL || 'info',
+    file: process.env.LOG_FILE || 'logs/app.log'
+  }
 };
 
-// Configuration for staging environment
-const stagingConfig = {
-  port: parseInt(getEnv('PORT', '3000'), 10),
-  hostname: 'staging.99digicom.com',
-  environment: 'staging',
-  logLevel: 'info',
-  // In a real staging environment, you would use actual keys from a secure location
-  buyerPublicKey: getEnv('BUYER_PUBLIC_KEY', 'T9e7d6aNJD1D90Y9qETlJGg0xLr0IuTKuMv6yg51CrwSxGy4nVCuYiZNz9nPVJOxUparuh3rKvj9mlyVzFRvrg=='),
-  // Other staging configuration values can be added here
-};
-
-// Determine which configuration to use based on the NODE_ENV environment variable
-const env = process.env.NODE_ENV || 'development';
-
-let config;
-if (env === 'staging') {
-  config = { ...defaultConfig, ...stagingConfig };
-} else {
-  config = defaultConfig;
-}
-
-// Freeze the configuration to prevent modifications
-module.exports = Object.freeze(config);
-// exports.config = Object.freeze(config);
+module.exports = config;

@@ -1,142 +1,228 @@
-# ONDC Seller Search Service
+# ONDC Seller Search API
 
-This project implements an ONDC (Open Network for Digital Commerce) Seller Search Service that handles search requests from buyers according to ONDC specifications.
+A Node.js implementation of the ONDC (Open Network for Digital Commerce) Seller Search API for staging.99digicom.com.
 
-## Getting Started
+## Overview
 
-### Prerequisites
-- Node.js (version 14 or higher)
-- npm (Node Package Manager)
+This API implements the ONDC protocol's search functionality, allowing buyer applications to search for products and services offered by the seller.
 
-### Installation
+## Features
 
-1. Clone the repository
-2. Install dependencies
+- ✅ ONDC Protocol v2.0.1 compliant
+- ✅ Product search with filtering
+- ✅ Category-based search
+- ✅ Price range filtering
+- ✅ Health check endpoints
+- ✅ Error handling and validation
+- ✅ CORS enabled for cross-origin requests
+- ✅ Security headers with Helmet
+- ✅ Request logging
 
+## API Endpoints
+
+### Core ONDC Endpoints
+
+- `POST /protocol/v1/search` - Main search endpoint for buyer apps
+- `POST /protocol/v1/on_search` - Callback endpoint for search acknowledgments
+
+### Utility Endpoints
+
+- `GET /health` - Basic health check
+- `GET /health/detailed` - Detailed health information
+- `GET /protocol/v1/stats` - Search statistics
+- `POST /protocol/v1/test-search` - Test search endpoint (development)
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <your-repo-url>
+cd ondc-seller-search-api
+```
+
+2. Install dependencies:
 ```bash
 npm install
 ```
 
-## Project Structure
-
-- `main-server.js` - Main server implementation with Express
-- `utils/schema-validator.js` - Schema validation utilities
-- `schemas/search-schema.js` - JSON schema definition for search requests
-- `test-schema-validation.js` - Schema validation test cases
-- `test-main-server.js` - Server integration tests
-- `test-search-with-context.js` - Context-specific search tests
-- `test-search.js` - Basic search tests
-
-## Schema Validation
-
-The server includes comprehensive JSON schema validation for ONDC search request messages. This validation ensures that all incoming requests adhere to the required structure and format.
-
-### Validation Coverage
-- Message structure validation (presence of context and message fields)
-- Intent validation (required fields and data types)
-- Tags validation (with specific requirements based on tag codes)
-- Timestamp format validation (RFC 3339)
-- Payload type validation for specific tags
-
-### Schema Definition
-The schema is defined in `schemas/search-schema.js` and includes detailed validation rules for:
-- `intent` - The search intent structure
-- `payment` - Payment details structure
-- `tags` - List of tags with conditional validation based on `code` values
-
-### Validation Logic
-The validation utility functions are implemented in `utils/schema-validator.js` and include:
-- `isValidRFC3339` - Validates timestamp format
-- `validateTagItem` - Validates individual tag items
-- `validateTag` - Validates a list of tags
-- `validateSearchIntent` - Validates the search message intent
-- `validateSearchMessage` - Validates the entire search message
-
-## Server Implementation
-
-The ONDC seller search service is implemented in `main-server.js`, which provides a lightweight Express server that handles search requests according to ONDC specifications.
-
-### Key Features
-- Health check endpoint at `/health`
-- Search endpoint at `/search` that immediately returns an ACK when a valid payload is received
-- Comprehensive error handling with appropriate NACK responses
-- Detailed request logging
-
-### Search Endpoint Behavior
-The `/search` endpoint follows these rules:
-- Returns an ACK response with status 200 when a valid payload is received
-- Returns a NACK response with appropriate error code and message when validation fails for:
-  - Empty request payload
-  - Missing context
-  - Missing BAP URI in context
-  - Missing message
-- Returns appropriate error responses for server errors
-
-## Testing the Service
-
-### Schema Validation Tests
-To run schema validation tests:
-
+3. Configure environment variables:
 ```bash
-npm run test-schema
+cp config.js.example config.js
+# Edit config.js with your settings
 ```
 
-This will execute `test-schema-validation.js` which includes test cases for:
-- Valid search message
-- Missing intent
-- Invalid tag code
-- Invalid timestamp format
-- Invalid payload type
-
-### Server Integration Tests
-To run tests against the main server implementation:
-
+4. Start the server:
 ```bash
-npm run test-main-server
-```
+# Development
+npm run dev
 
-This will execute `test-main-server.js` which includes tests for:
-- Health check endpoint
-- Valid search payload with authorization
-- Missing context validation
-- Missing message validation
-
-### Context-specific Tests
-To run tests with specific context configurations:
-
-```bash
-npm run test-context
-```
-
-## Starting the Server
-
-To start the server in development mode:
-
-```bash
+# Production
 npm start
 ```
 
-To start the server in staging mode:
+## Configuration
 
-```bash
-npm run start:staging
+The application uses `config.js` for configuration. Key settings include:
+
+- **Domain**: staging.99digicom.com
+- **ONDC Version**: 2.0.1
+- **Seller ID**: 99digicom-seller
+- **Port**: 3000 (configurable)
+
+## ONDC Search Request Format
+
+```json
+{
+  "context": {
+    "domain": "ONDC:RET10",
+    "country": "IND",
+    "city": "std:080",
+    "action": "search",
+    "core_version": "2.0.1",
+    "bap_id": "buyer-app-id",
+    "bap_uri": "https://buyer-app.com",
+    "bpp_id": "99digicom-seller",
+    "bpp_uri": "https://staging.99digicom.com",
+    "transaction_id": "unique-transaction-id",
+    "message_id": "unique-message-id",
+    "timestamp": "2024-01-01T00:00:00.000Z",
+    "ttl": "PT30S"
+  },
+  "message": {
+    "intent": {
+      "item": {
+        "descriptor": {
+          "name": "smartphone"
+        }
+      },
+      "category": {
+        "id": "electronics"
+      },
+      "fulfillment": {
+        "start": {
+          "location": {
+            "address": {
+              "city": "Bangalore"
+            }
+          }
+        }
+      }
+    }
+  }
+}
 ```
 
-The server will run on port 3000 by default and will log incoming requests and validation results. It will immediately respond with ACK when a valid payload is received, or NACK with error details otherwise.
+## ONDC Search Response Format
 
-## API Endpoints
+```json
+{
+  "context": {
+    "domain": "ONDC:RET10",
+    "country": "IND",
+    "city": "std:080",
+    "action": "on_search",
+    "core_version": "2.0.1",
+    "bap_id": "buyer-app-id",
+    "bap_uri": "https://buyer-app.com",
+    "bpp_id": "99digicom-seller",
+    "bpp_uri": "https://staging.99digicom.com",
+    "transaction_id": "unique-transaction-id",
+    "message_id": "unique-message-id",
+    "timestamp": "2024-01-01T00:00:00.000Z",
+    "ttl": "PT30S"
+  },
+  "message": {
+    "catalog": {
+      "bpp/descriptor": {
+        "name": "99DigiCom Seller",
+        "code": "99digicom-seller"
+      },
+      "bpp/categories": [...],
+      "bpp/providers": [
+        {
+          "id": "99digicom-seller",
+          "items": [...],
+          "fulfillments": [...],
+          "locations": [...]
+        }
+      ]
+    }
+  }
+}
+```
+
+## Testing
+
+### Test Search Endpoint
+
+```bash
+curl -X POST https://staging.99digicom.com/protocol/v1/test-search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "smartphone",
+    "category": "electronics",
+    "minPrice": 10000,
+    "maxPrice": 50000
+  }'
+```
 
 ### Health Check
-- **URL**: `/health`
-- **Method**: `GET`
-- **Description**: Checks if the server is running
-- **Response**: `{ "status": "UP" }` with status code 200
 
-### Search
-- **URL**: `/search`
-- **Method**: `POST`
-- **Description**: Accepts ONDC search requests with proper validation
-- **Request Format**: JSON payload with `context` and `message` fields
-- **Response**: ACK/NACK message based on validation results
-- **Valid Response**: `{ "message": { "ack": { "status": "ACK" } } }` with status code 200
-- **Error Response**: `{ "message": { "ack": { "status": "NACK", "error": { ... } } } }` with appropriate status code
+```bash
+curl https://staging.99digicom.com/health
+```
+
+## Product Data
+
+The API currently uses mock product data. To integrate with a real database:
+
+1. Update `services/productService.js`
+2. Replace mock data with database queries
+3. Configure database connection in `config.js`
+
+## Deployment
+
+### Using PM2
+
+```bash
+npm install -g pm2
+pm2 start app.js --name ondc-seller-api
+pm2 save
+pm2 startup
+```
+
+### Using Docker
+
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+## Monitoring
+
+- Health check endpoint: `/health`
+- Detailed health: `/health/detailed`
+- Search statistics: `/protocol/v1/stats`
+
+## Security
+
+- Helmet.js for security headers
+- CORS configuration
+- Request validation
+- Error handling without sensitive data exposure
+
+## Support
+
+For issues and questions:
+- Check the logs for error details
+- Verify ONDC protocol compliance
+- Test with the test-search endpoint first
+
+## License
+
+MIT License - see LICENSE file for details.
