@@ -15,7 +15,7 @@ app.use(bodyParser.json({ limit: '5mb' }));
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const DEFAULT_DEV_URI = 'mongodb://localhost:27017/ondc_seller';
-const DEFAULT_PROD_URI = 'mongodb+srv://99partnersin:99Partnersin@sellerondc.ygkwjfx.mongodb.net/ondcSeller?retryWrites=true&w=majority&appName=sellerONDC';
+const DEFAULT_PROD_URI = 'mongodb+srv://99partnersin:99Partnersin@ondcseller.nmuucu3.mongodb.net/ondcSeller?retryWrites=true&w=majority&appName=ondcSeller';
 const MONGODB_URI = process.env.MONGODB_URI || (NODE_ENV === 'production' ? DEFAULT_PROD_URI : DEFAULT_DEV_URI);
 
 // BPP Configuration
