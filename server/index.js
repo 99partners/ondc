@@ -516,9 +516,52 @@ app.get('/debug/transactions', async (req, res) => {
 
 app.get('/debug/transactions/:transactionId', async (req, res) => {
   try {
-  const { transactionId } = req.params;
+    const { transactionId } = req.params;
     const transactions = await TransactionTrail.find({ transaction_id: transactionId }).sort({ created_at: -1 });
     res.json(transactions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// View incoming search requests
+app.get('/debug/search-requests', async (req, res) => {
+  try {
+    const searchRequests = await SearchData.find().sort({ created_at: -1 }).limit(50);
+    res.json({
+      count: searchRequests.length,
+      requests: searchRequests
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// View search requests by transaction ID
+app.get('/debug/search-requests/:transactionId', async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    const searchRequest = await SearchData.findOne({ transaction_id: transactionId });
+    if (!searchRequest) {
+      return res.status(404).json({ error: 'Search request not found' });
+    }
+    res.json(searchRequest);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// View all incoming requests (search, select, init, confirm)
+app.get('/debug/incoming-requests', async (req, res) => {
+  try {
+    const incomingRequests = await TransactionTrail.find({ 
+      direction: 'incoming' 
+    }).sort({ created_at: -1 }).limit(100);
+    
+    res.json({
+      count: incomingRequests.length,
+      requests: incomingRequests
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
