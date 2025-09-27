@@ -1,209 +1,290 @@
 const express = require('express');
+require('dotenv').config();
+const mongoose = require('mongoose');
+const cors = require('cors');
 const bodyParser = require('body-parser');
-// Assuming modern Node.js environment where global 'fetch' is available.
-// If not, you will need to 'npm install node-fetch' and 'const fetch = require('node-fetch');'
-
-// --- Configuration (Load from .env in real app, hardcoded here for file generation) ---
-const BPP_DOMAIN = process.env.BPP_DOMAIN || "staging.99digicom.com";
-const BPP_ID = BPP_DOMAIN;
-const BPP_URI = process.env.BPP_URI || `https://${BPP_DOMAIN}/ondc`;
-const PORT = process.env.PORT || 3000;
-
-// You would load your private signing key and BAP public keys here
-// const PRIVATE_KEY = process.env.PRIVATE_KEY; 
 
 const app = express();
-// Increase limit for potentially large ONDC payloads
+
+// Middleware
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+app.use(CORS_ORIGINS.length ? cors({ origin: CORS_ORIGINS }) : cors());
 app.use(bodyParser.json({ limit: '5mb' }));
 
-// --- Mock Product Data ---
-const MOCK_PRODUCTS = [
-    {
-        "id": "SKU-99DC-001",
-        "name": "Organic Black Tea Leaves (100g)",
-        "price": 249.00,
-        "category_id": "Grocery",
-        "description": "Finest Assam blend, certified organic.",
-        "image_url": "https://placehold.co/600x400/3A201A/FFFFFF?text=Tea+Leaves",
-        "provider_id": "P-99DC-01"
-    },
-    {
-        "id": "SKU-99DC-002",
-        "name": "Artisanal Sourdough Bread",
-        "price": 120.00,
-        "category_id": "Bakery",
-        "description": "Naturally fermented bread, 500g.",
-        "image_url": "https://placehold.co/600x400/F0E68C/000000?text=Sourdough",
-        "provider_id": "P-99DC-01"
-    }
-];
+const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// --- 1. Signature Verification Placeholder (CRITICAL) ---
-/**
- * WARNING: In a production BPP, this function MUST implement the ONDC
- * cryptographic signature verification logic using the BAP's public key
- * and the 'X-Signature' header.
- * @param {object} req The Express request object.
- * @returns {boolean} True if the signature is valid, False otherwise.
- */
-function verifyRequest(req) {
-    // --------------------------------------------------------------------------
-    // TODO: Implement actual ONDC signature verification here!
-    // If the signature fails, return HTTP 401 Unauthorized.
-    // --------------------------------------------------------------------------
-    console.log("SECURITY: Skipping ONDC signature verification in simulator mode. MUST IMPLEMENT for production.");
-    return true; // SIMULATING SUCCESS
+// MongoDB Atlas Configuration - Using your provided URI
+const MONGODB_URI = 'mongodb+srv://99partnersin:99Partnersin@ondcseller.nmuucu3.mongodb.net/ondcSeller?retryWrites=true&w=majority&appName=ondcSeller';
+
+// BPP Configuration
+const BPP_ID = process.env.BPP_ID || 'staging.99digicom.com';
+const BPP_URI = process.env.BPP_URI || 'https://staging.99digicom.com';
+
+// Health endpoint
+app.get('/health', (req, res) => res.json({ status: 'OK', timestamp: new Date().toISOString() }));
+
+// ONDC Error Codes
+const ONDC_ERRORS = {
+  '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
+  '30022': { type: 'CONTEXT-ERROR', code: '30022', message: 'Invalid timestamp' },
+  '10001': { type: 'CONTEXT-ERROR', code: '10001', message: 'Invalid context' },
+  '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' }
+};
+
+// Transaction Trail Model
+const TransactionTrailSchema = new mongoose.Schema({
+  transaction_id: { type: String, required: true, index: true },
+  message_id: { type: String, required: true, index: true },
+  action: { type: String, required: true },
+  direction: { type: String, enum: ['incoming', 'outgoing'], required: true },
+  status: { type: String, enum: ['ACK', 'NACK'], required: true },
+  context: { type: Object, required: true },
+  message: { type: Object },
+  error: { type: Object },
+  timestamp: { type: Date, required: true },
+  bap_id: { type: String, index: true },
+  bap_uri: { type: String },
+  bpp_id: { type: String, index: true },
+  bpp_uri: { type: String },
+  domain: { type: String },
+  country: { type: String },
+  city: { type: String },
+  core_version: { type: String },
+  created_at: { type: Date, default: Date.now }
+});
+
+const TransactionTrail = mongoose.model('TransactionTrail', TransactionTrailSchema);
+
+// Search Data Model - This stores all incoming /search requests
+const SearchDataSchema = new mongoose.Schema({
+  transaction_id: { type: String, required: true, index: true },
+  message_id: { type: String, required: true, index: true },
+  context: { type: Object, required: true },
+  message: { type: Object, required: true },
+  intent: { type: Object },
+  created_at: { type: Date, default: Date.now }
+});
+
+const SearchData = mongoose.model('SearchData', SearchDataSchema);
+
+// Utility Functions
+function validateContext(context) {
+  const errors = [];
+  
+  if (!context) {
+    errors.push('Context is required');
+    return errors;
+  }
+  
+  if (!context.domain) errors.push('domain is required');
+  if (!context.country) errors.push('country is required');
+  if (!context.city) errors.push('city is required');
+  if (!context.action) errors.push('action is required');
+  if (!context.core_version) errors.push('core_version is required');
+  if (!context.bap_id) errors.push('bap_id is required');
+  if (!context.bap_uri) errors.push('bap_uri is required');
+  if (!context.bpp_id) errors.push('bpp_id is required');
+  if (!context.bpp_uri) errors.push('bpp_uri is required');
+  if (!context.transaction_id) errors.push('transaction_id is required');
+  if (!context.message_id) errors.push('message_id is required');
+  if (!context.timestamp) errors.push('timestamp is required');
+  if (!context.ttl) errors.push('ttl is required');
+  
+  return errors;
 }
 
-// --- 2. Asynchronous /on_search Sender ---
+function createErrorResponse(errorCode, message) {
+  const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
+  return {
+    message: { ack: { status: 'NACK' } },
+    error: {
+      type: error.type,
+      code: error.code,
+      message: error.message
+    }
+  };
+}
 
-/**
- * Constructs and posts the /on_search response back to the BAP's URI.
- * In a real application, this should be done in a non-blocking background process.
- * * @param {object} onSearchPayload The payload to send.
- * @param {string} bapUri The base URI of the Buyer App.
- */
-async function sendOnSearchToBAP(onSearchPayload, bapUri) {
-    const callbackUrl = `${bapUri}/on_search`;
+function createAckResponse() {
+  return {
+    message: { ack: { status: 'ACK' } }
+  };
+}
+
+// Store transaction trail
+async function storeTransactionTrail(data) {
+  try {
+    const trail = new TransactionTrail(data);
+    await trail.save();
+    console.log(`✅ Transaction trail stored: ${data.transaction_id}/${data.message_id} - ${data.action} - ${data.status}`);
+  } catch (error) {
+    console.error('❌ Failed to store transaction trail:', error);
+  }
+}
+
+// /search API - Buyer app sends search request
+app.post('/search', async (req, res) => {
+  try {
+    const payload = req.body;
     
-    // --------------------------------------------------------------------------
-    // TODO: The on_search payload MUST be signed by the BPP's private key
-    // before transmission in a live environment.
-    // --------------------------------------------------------------------------
+    console.log('=== INCOMING SEARCH REQUEST ===');
+    console.log('Transaction ID:', payload?.context?.transaction_id);
+    console.log('Message ID:', payload?.context?.message_id);
+    console.log('BAP ID:', payload?.context?.bap_id);
+    console.log('Domain:', payload?.context?.domain);
+    console.log('Action:', payload?.context?.action);
+    console.log('Full Payload:', JSON.stringify(payload, null, 2));
+    console.log('================================');
     
+    // Validate payload structure
+    if (!payload || !payload.context || !payload.message) {
+      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
+      await storeTransactionTrail({
+        transaction_id: payload?.context?.transaction_id || 'unknown',
+        message_id: payload?.context?.message_id || 'unknown',
+        action: 'search',
+        direction: 'incoming',
+        status: 'NACK',
+        context: payload?.context || {},
+        error: errorResponse.error,
+        timestamp: new Date(),
+        bap_id: payload?.context?.bap_id,
+        bap_uri: payload?.context?.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI
+      });
+      return res.status(400).json(errorResponse);
+    }
+
+    const { context, message } = payload;
+    
+    // Validate context
+    const contextErrors = validateContext(context);
+    if (contextErrors.length > 0) {
+      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
+      await storeTransactionTrail({
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        action: 'search',
+        direction: 'incoming',
+        status: 'NACK',
+        context,
+        error: errorResponse.error,
+        timestamp: new Date(),
+        bap_id: context.bap_id,
+        bap_uri: context.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI
+      });
+      return res.status(400).json(errorResponse);
+    }
+
+    // Store search data in MongoDB Atlas - MANDATORY as requested
     try {
-        console.log(`\nASYNC: Attempting to POST /on_search to BAP: ${callbackUrl}`);
-        
-        const response = await fetch(callbackUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                // 'Authorization': 'Signature ...' <- Must be added after signing
-            },
-            body: JSON.stringify(onSearchPayload),
-            timeout: 5000 // Timeout for the callback (adjust as needed)
-        });
-
-        if (response.status === 200 || response.status === 202) {
-            console.log(`ASYNC: Successfully posted /on_search. Status: ${response.status}`);
-        } else {
-            const errorText = await response.text();
-            console.error(`ASYNC: Failed to post /on_search. Status: ${response.status}. Response: ${errorText}`);
-        }
-    } catch (error) {
-        console.error(`ASYNC: Network error while posting /on_search: ${error.message}`);
+      const searchData = new SearchData({
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        context,
+        message,
+        intent: message.intent
+      });
+      await searchData.save();
+      console.log('✅ Search data saved to MongoDB Atlas database');
+      console.log('📊 Saved search request for transaction:', context.transaction_id);
+    } catch (dbError) {
+      console.error('❌ Failed to save search data to MongoDB Atlas:', dbError.message);
+      // Continue execution but log the error
     }
-}
 
-
-// --- 3. /on_search Payload Generator ---
-
-function generateOnSearchPayload(context) {
-    const onSearchContext = { 
-        ...context,
-        action: 'on_search',
+    // Store transaction trail in MongoDB Atlas - MANDATORY for audit
+    try {
+      await storeTransactionTrail({
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        action: 'search',
+        direction: 'incoming',
+        status: 'ACK',
+        context,
+        message,
+        timestamp: new Date(),
+        bap_id: context.bap_id,
+        bap_uri: context.bap_uri,
         bpp_id: BPP_ID,
         bpp_uri: BPP_URI,
-        timestamp: new Date().toISOString() // New timestamp for response
-    };
+        domain: context.domain,
+        country: context.country,
+        city: context.city,
+        core_version: context.core_version
+      });
+    } catch (trailError) {
+      console.error('❌ Failed to store transaction trail:', trailError.message);
+    }
 
-    const catalogue = {
-        "descriptor": { "name": "99DigiCom Staging Catalogue" },
-        "providers": [
-            {
-                "id": "P-99DC-01",
-                "descriptor": { "name": "99DigiCom Fulfillment Partner" },
-                "locations": [
-                    { "id": "L-99DC-01", "address": { "city": onSearchContext.city, "country": onSearchContext.country } }
-                ],
-                "fulfillments": [
-                    { "id": "F-99DC-01", "type": "Delivery" } // Define default fulfillment
-                ],
-                "items": MOCK_PRODUCTS.map(product => ({
-                    "id": product.id,
-                    "descriptor": {
-                        "name": product.name,
-                        "short_desc": product.description,
-                        "images": [product.image_url]
-                    },
-                    "price": {
-                        "currency": "INR",
-                        "value": String(product.price)
-                    },
-                    "category_id": product.category_id,
-                    "location_id": "L-99DC-01", 
-                    "fulfillment_id": "F-99DC-01" 
-                }))
-            }
-        ]
-    };
-
-    return {
-        "context": onSearchContext,
-        "message": { "catalogue": catalogue }
-    };
-}
-
-
-// --- 4. Main /search Endpoint ---
-
-app.post("/search", async (req, res) => {
-    const searchRequest = req.body;
-    const context = searchRequest.context;
+    // Send ACK response
+    const ackResponse = createAckResponse();
+    console.log('✅ Sending ACK response for search request');
+    res.status(202).json(ackResponse);
     
-    // Step A: Security Check
-    if (!verifyRequest(req)) {
-        console.error(`Request failed signature verification: ${context?.transaction_id}`);
-        return res.status(401).json({
-            "message": { "ack": { "status": "NACK" } },
-            "error": { "code": "401", "message": "Signature verification failed." }
-        });
-    }
-
-    if (!context) {
-        return res.status(400).json({
-            "message": { "ack": { "status": "NACK" } },
-            "error": { "code": "001", "message": "Missing context object." }
-        });
-    }
-
-    try {
-        console.log(`\n--- RECEIVED /search [${context.transaction_id}] ---`);
-        console.log(`BAP URI: ${context.bap_uri}`);
-
-        // Step B: Send Immediate ACK (HTTP 202 Accepted)
-        const ackResponse = {
-            "context": {
-                ...context,
-                bpp_id: BPP_ID,
-                bpp_uri: BPP_URI,
-                timestamp: new Date().toISOString()
-            },
-            "message": { "ack": { "status": "ACK" } }
-        };
-        res.status(202).json(ackResponse);
-
-        // Step C: Process the request and send asynchronous /on_search
-        const onSearchPayload = generateOnSearchPayload(context);
-        
-        // This is where you call the asynchronous function to post the result back.
-        await sendOnSearchToBAP(onSearchPayload, context.bap_uri);
-
-    } catch (e) {
-        console.error(`ERROR: Critical error handling /search [${context.transaction_id}]: ${e.message}`);
-        
-        // NOTE: Since the ACK 202 has already been sent, subsequent errors
-        // during async processing should be handled internally (e.g., logging
-        // and optionally sending an error via the /on_error action if ACK fails).
-    }
+  } catch (error) {
+    console.error('❌ Error in /search:', error);
+    const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`);
+    res.status(500).json(errorResponse);
+  }
 });
 
-
-// --- Start Server ---
-app.listen(PORT, () => {
-    console.log("\n=========================================================");
-    console.log(`ONDC BPP Server for: ${BPP_DOMAIN}`);
-    console.log(`Listening on port ${PORT}`);
-    console.log("STATUS: Ready to receive /search requests.");
-    console.log("=========================================================\n");
+// Debug endpoints to view stored data
+app.get('/debug/search-requests', async (req, res) => {
+  try {
+    const searchRequests = await SearchData.find().sort({ created_at: -1 }).limit(50);
+    res.json({
+      count: searchRequests.length,
+      requests: searchRequests
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
+
+app.get('/debug/transactions', async (req, res) => {
+  try {
+    const transactions = await TransactionTrail.find().sort({ created_at: -1 }).limit(100);
+    res.json(transactions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Connect to MongoDB Atlas and start server
+console.log('🔗 Connecting to MongoDB Atlas...');
+console.log('Database:', 'ondcseller.nmuucu3.mongodb.net/ondcSeller');
+
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+})
+.then(() => {
+  console.log('✅ Connected to MongoDB Atlas successfully!');
+  if (require.main === module) {
+    app.listen(PORT, () => {
+      console.log(`🚀 ONDC Seller BPP listening on http://localhost:${PORT}`);
+      console.log('📊 Debug endpoints available:');
+      console.log(`   - http://localhost:${PORT}/debug/search-requests`);
+      console.log(`   - http://localhost:${PORT}/debug/transactions`);
+      console.log('🔍 All incoming /search requests will be stored in MongoDB Atlas');
+    });
+  }
+})
+.catch(err => {
+  console.error('❌ MongoDB Atlas connection error:', err.message);
+  console.log('⚠️  Server will start anyway with limited functionality');
+  if (require.main === module) {
+    app.listen(PORT, () => {
+      console.log(`🚀 ONDC Seller BPP listening on http://localhost:${PORT} (MongoDB unavailable)`);
+    });
+  }
+});
+
+module.exports = { app };
