@@ -262,8 +262,12 @@ console.log('Database:', 'ondcseller.nmuucu3.mongodb.net/ondcSeller');
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 10000,
-  socketTimeoutMS: 45000,
+  serverSelectionTimeoutMS: 30000,
+  socketTimeoutMS: 60000,
+  connectTimeoutMS: 30000,
+  maxPoolSize: 10,
+  minPoolSize: 2,
+  maxIdleTimeMS: 60000,
 })
 .then(() => {
   console.log('✅ Connected to MongoDB Atlas successfully!');
