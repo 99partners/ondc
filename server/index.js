@@ -585,33 +585,22 @@ app.get('/logo', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>99Digicom Logo</title>
+      <title>99Digicom</title>
       <style>
         body { 
-          font-family: Arial, sans-serif; 
-          text-align: center; 
-          padding: 50px; 
-          background-color: #f5f5f5;
           margin: 0;
         }
         .container {
-          background: white;
-          padding: 30px;
-          border-radius: 10px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
           display: inline-block;
         }
         img { 
-          max-width: 300px; 
+          max-width: 200px; 
           height: auto;
-          border: 1px solid #ddd;
-          border-radius: 5px;
         }
       </style>
     </head>
     <body>
       <div class="container">
-        <h1>99Digicom Logo</h1>
         ${logoExists ? 
           `<img src="/image/logo.jpeg" alt="99Digicom Logo">` :
           `<div style="color: red;">
