@@ -592,6 +592,7 @@ app.get('/logo', (req, res) => {
           text-align: center; 
           padding: 50px; 
           background-color: #f5f5f5;
+          margin: 0;
         }
         .container {
           background: white;
@@ -606,31 +607,17 @@ app.get('/logo', (req, res) => {
           border: 1px solid #ddd;
           border-radius: 5px;
         }
-        .info {
-          margin-top: 20px;
-          color: #666;
-        }
-        .success { color: green; }
-        .error { color: red; }
       </style>
     </head>
     <body>
       <div class="container">
         <h1>99Digicom Logo</h1>
         ${logoExists ? 
-          `<img src="/image/logo.jpeg" alt="99Digicom Logo">
-           <p class="success">✅ Logo file found at: ${logoPath}</p>` :
-          `<div class="error">
-             <p>❌ Logo file not found at: ${logoPath}</p>
-             <p>Please ensure logo.jpeg is in the same directory as your server file</p>
+          `<img src="/image/logo.jpeg" alt="99Digicom Logo">` :
+          `<div style="color: red;">
+             <p>❌ Logo file not found</p>
            </div>`
         }
-        <div class="info">
-          <p><strong>Logo URL:</strong> ${BPP_URI}/image/logo.jpeg</p>
-          <p><strong>Current Directory:</strong> ${__dirname}</p>
-          <a href="/image/logo.jpeg" target="_blank">Open image directly</a> | 
-          <a href="/health">Check health endpoint</a>
-        </div>
       </div>
     </body>
     </html>
