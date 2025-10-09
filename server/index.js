@@ -68,16 +68,7 @@ const SearchDataSchema = new mongoose.Schema({
 
 const SearchData = mongoose.model('SearchData', SearchDataSchema);
 
-// Select Data Model - This stores all incoming /select requests
-const SelectDataSchema = new mongoose.Schema({
-	transaction_id: { type: String, required: true, index: true },
-	message_id: { type: String, required: true, index: true },
-	context: { type: Object, required: true },
-	message: { type: Object, required: true },
-	created_at: { type: Date, default: Date.now }
-});
-
-const SelectData = mongoose.model('SelectData', SelectDataSchema);
+// (select handling removed)
 
 // Utility Functions
 function validateContext(context) {
@@ -243,113 +234,7 @@ app.post('/search', async (req, res) => {
   }
 });
 
-// /select API - Buyer app sends select request (mirrors /search handling)
-app.post('/select', async (req, res) => {
-	try {
-		const payload = req.body;
-
-		console.log('=== INCOMING SELECT REQUEST ===');
-		console.log('Transaction ID:', payload?.context?.transaction_id);
-		console.log('Message ID:', payload?.context?.message_id);
-		console.log('BAP ID:', payload?.context?.bap_id);
-		console.log('Domain:', payload?.context?.domain);
-		console.log('Action:', payload?.context?.action);
-		console.log('================================');
-
-		// Validate payload structure
-		if (!payload || !payload.context || !payload.message) {
-			const errorResponse = createErrorResponse('10001', 'Invalid request structure');
-			await storeTransactionTrail({
-				transaction_id: payload?.context?.transaction_id || 'unknown',
-				message_id: payload?.context?.message_id || 'unknown',
-				action: 'select',
-				direction: 'incoming',
-				status: 'NACK',
-				context: payload?.context || {},
-				error: errorResponse.error,
-				timestamp: new Date(),
-				bap_id: payload?.context?.bap_id,
-				bap_uri: payload?.context?.bap_uri,
-				bpp_id: BPP_ID,
-				bpp_uri: BPP_URI
-			});
-			return res.status(400).json(errorResponse);
-		}
-
-		const { context, message } = payload;
-
-		// Validate context
-		const contextErrors = validateContext(context);
-		if (contextErrors.length > 0) {
-			const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
-			await storeTransactionTrail({
-				transaction_id: context.transaction_id,
-				message_id: context.message_id,
-				action: 'select',
-				direction: 'incoming',
-				status: 'NACK',
-				context,
-				error: errorResponse.error,
-				timestamp: new Date(),
-				bap_id: context.bap_id,
-				bap_uri: context.bap_uri,
-				bpp_id: BPP_ID,
-				bpp_uri: BPP_URI
-			});
-			return res.status(400).json(errorResponse);
-		}
-
-		// Store select data
-		try {
-			const selectData = new SelectData({
-				transaction_id: context.transaction_id,
-				message_id: context.message_id,
-				context,
-				message
-			});
-			await selectData.save();
-			console.log('✅ Select data saved to MongoDB Atlas database');
-			console.log('📊 Saved select request for transaction:', context.transaction_id);
-		} catch (dbError) {
-			console.error('❌ Failed to save select data to MongoDB Atlas:', dbError.message);
-			// Continue execution but log the error
-		}
-
-		// Store transaction trail
-		try {
-			await storeTransactionTrail({
-				transaction_id: context.transaction_id,
-				message_id: context.message_id,
-				action: 'select',
-				direction: 'incoming',
-				status: 'ACK',
-				context,
-				message,
-				timestamp: new Date(),
-				bap_id: context.bap_id,
-				bap_uri: context.bap_uri,
-				bpp_id: BPP_ID,
-				bpp_uri: BPP_URI,
-				domain: context.domain,
-				country: context.country,
-				city: context.city,
-				core_version: context.core_version
-			});
-		} catch (trailError) {
-			console.error('❌ Failed to store transaction trail:', trailError.message);
-		}
-
-		// Send ACK response
-		const ackResponse = createAckResponse();
-		console.log('✅ Sending ACK response for select request');
-		res.status(202).json(ackResponse);
-
-	} catch (error) {
-		console.error('❌ Error in /select:', error);
-		const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`);
-		res.status(500).json(errorResponse);
-	}
-});
+// (POST /select removed)
 
 // Debug endpoints to view stored data
 app.get('/debug/search-requests', async (req, res) => {
@@ -365,17 +250,7 @@ app.get('/debug/search-requests', async (req, res) => {
   }
 });
 
-app.get('/debug/select-requests', async (req, res) => {
-	try {
-		const selectRequests = await SelectData.find().sort({ created_at: -1 }).limit(50);
-		res.json({
-			count: selectRequests.length,
-			requests: selectRequests
-		});
-	} catch (error) {
-		res.status(500).json({ error: error.message });
-	}
-});
+// (debug select requests route removed)
 
 app.get('/debug/transactions', async (req, res) => {
   try {
