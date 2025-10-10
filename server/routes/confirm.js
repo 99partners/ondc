@@ -6,6 +6,16 @@ const mongoose = require('mongoose');
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
 
+// Import InitData model to access init request data
+const InitDataSchema = new mongoose.Schema({
+  transaction_id: { type: String, required: true, index: true },
+  message_id: { type: String, required: true, index: true },
+  context: { type: Object, required: true },
+  message: { type: Object, required: true },
+  order: { type: Object },
+  created_at: { type: Date, default: Date.now }
+});
+
 // ONDC Error Codes
 const ONDC_ERRORS = {
   '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
@@ -48,6 +58,18 @@ const ConfirmDataSchema = new mongoose.Schema({
 // Check if models are already registered to avoid OverwriteModelError
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const ConfirmData = mongoose.models.ConfirmData || mongoose.model('ConfirmData', ConfirmDataSchema);
+const InitData = mongoose.models.InitData || mongoose.model('InitData', InitDataSchema);
+
+// Function to get init data for a transaction
+async function getInitDataForTransaction(transactionId) {
+  try {
+    const initData = await InitData.findOne({ transaction_id: transactionId }).sort({ created_at: -1 });
+    return initData;
+  } catch (error) {
+    console.error('❌ Error retrieving init data:', error);
+    return null;
+  }
+}
 
 // Utility Functions
 function validateContext(context) {
@@ -159,6 +181,19 @@ router.post('/', async (req, res) => {
       return res.status(400).json(errorResponse);
     }
 
+    // Get init data to reuse billing timestamp
+    const initData = await getInitDataForTransaction(context.transaction_id);
+    
+    // If billing object exists in the message, ensure created_at matches init
+    if (message.order && message.order.billing && initData && initData.message && 
+        initData.message.order && initData.message.order.billing) {
+      // Use the same created_at timestamp from init
+      message.order.billing.created_at = initData.message.order.billing.created_at;
+      console.log('✅ Reused billing created_at timestamp from init:', message.order.billing.created_at);
+    } else {
+      console.log('⚠️ Could not find init billing data to match timestamps');
+    }
+    
     // Store confirm data in MongoDB Atlas
     try {
       const confirmData = new ConfirmData({
