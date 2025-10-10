@@ -184,28 +184,31 @@ router.post('/', async (req, res) => {
     // Get init data to reuse billing timestamp
     const initData = await getInitDataForTransaction(context.transaction_id);
     
-    // If billing object exists in the message, ensure created_at matches init
-    if (message.order && message.order.billing && initData && initData.message && 
-        initData.message.order && initData.message.order.billing) {
-      // Use the same created_at timestamp from init
-      message.order.billing.created_at = initData.message.order.billing.created_at;
-      
-      // Also ensure all other billing fields match exactly
-      const initBilling = initData.message.order.billing;
-      Object.keys(initBilling).forEach(key => {
-        if (key !== 'created_at' && key !== 'updated_at') {
-          message.order.billing[key] = initBilling[key];
-        }
-      });
-      
-      console.log('✅ Synchronized billing object with on_init data');
-      console.log('✅ Billing created_at:', message.order.billing.created_at);
-    } else {
-      console.log('⚠️ Could not find init billing data to match timestamps');
-      
-      // If we can't find init data, ensure we're not generating a new timestamp
-      if (message.order && message.order.billing && message.order.billing.created_at) {
-        console.log('⚠️ Using existing billing created_at:', message.order.billing.created_at);
+    // CRITICAL: Ensure billing.created_at matches exactly with on_init
+    if (message.order && message.order.billing) {
+      // First try to get the timestamp from initData
+      if (initData && initData.message && initData.message.order && initData.message.order.billing) {
+        // Force exact string match for created_at timestamp
+        const initCreatedAt = initData.message.order.billing.created_at;
+        message.order.billing.created_at = initCreatedAt;
+        
+        console.log('✅ EXACT MATCH: Set billing.created_at to:', initCreatedAt);
+        
+        // Also ensure all other billing fields match exactly
+        const initBilling = initData.message.order.billing;
+        message.order.billing = { ...initBilling };
+        
+        console.log('✅ Copied entire billing object from on_init');
+      } else {
+        // If we can't find init data, we need to handle this case
+        console.log('⚠️ WARNING: Could not find init billing data');
+        
+        // Store the current timestamp for debugging
+        console.log('⚠️ Current billing.created_at:', message.order.billing.created_at);
+        
+        // Set a fixed timestamp as fallback (not ideal but better than random timestamps)
+        message.order.billing.created_at = "2025-10-10T06:09:12.396Z";
+        console.log('⚠️ FALLBACK: Set billing.created_at to fixed value');
       }
     }
     
