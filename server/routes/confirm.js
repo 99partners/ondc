@@ -211,12 +211,20 @@ router.post('/', async (req, res) => {
     
     // Store confirm data in MongoDB Atlas
     try {
+      // Get the created_at timestamp from init data if available
+      let createdAt = new Date();
+      if (initData && initData.created_at) {
+        createdAt = initData.created_at;
+        console.log('✅ Using created_at timestamp from init:', createdAt);
+      }
+
       const confirmData = new ConfirmData({
         transaction_id: context.transaction_id,
         message_id: context.message_id,
         context,
         message,
-        order: message.order
+        order: message.order,
+        created_at: createdAt // Use the same created_at as init
       });
       await confirmData.save();
       console.log('✅ Confirm data saved to MongoDB Atlas database');
