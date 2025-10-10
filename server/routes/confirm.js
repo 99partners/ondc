@@ -189,9 +189,24 @@ router.post('/', async (req, res) => {
         initData.message.order && initData.message.order.billing) {
       // Use the same created_at timestamp from init
       message.order.billing.created_at = initData.message.order.billing.created_at;
-      console.log('✅ Reused billing created_at timestamp from init:', message.order.billing.created_at);
+      
+      // Also ensure all other billing fields match exactly
+      const initBilling = initData.message.order.billing;
+      Object.keys(initBilling).forEach(key => {
+        if (key !== 'created_at' && key !== 'updated_at') {
+          message.order.billing[key] = initBilling[key];
+        }
+      });
+      
+      console.log('✅ Synchronized billing object with on_init data');
+      console.log('✅ Billing created_at:', message.order.billing.created_at);
     } else {
       console.log('⚠️ Could not find init billing data to match timestamps');
+      
+      // If we can't find init data, ensure we're not generating a new timestamp
+      if (message.order && message.order.billing && message.order.billing.created_at) {
+        console.log('⚠️ Using existing billing created_at:', message.order.billing.created_at);
+      }
     }
     
     // Store confirm data in MongoDB Atlas
