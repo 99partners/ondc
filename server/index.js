@@ -8,6 +8,8 @@ const path = require('path');
 // Import route files
 const searchRoutes = require('./routes/search');
 const selectRoutes = require('./routes/select');
+const initRoutes = require('./routes/init');
+const confirmRoutes = require('./routes/confirm');
 
 const app = express();
 
@@ -28,6 +30,8 @@ app.get('/health', (req, res) => res.json({ status: 'OK', timestamp: new Date().
 // Use route files
 app.use('/search', searchRoutes);
 app.use('/select', selectRoutes);
+app.use('/init', initRoutes);
+app.use('/confirm', confirmRoutes);
 
 // Debug endpoint for transaction trails
 app.get('/debug/transactions', async (req, res) => {
@@ -62,6 +66,8 @@ mongoose.connect(MONGODB_URI, {
       console.log('📊 Debug endpoints available:');
       console.log(`   - http://localhost:${PORT}/search/debug`);
       console.log(`   - http://localhost:${PORT}/select/debug`);
+      console.log(`   - http://localhost:${PORT}/init/debug`);
+      console.log(`   - http://localhost:${PORT}/confirm/debug`);
       console.log(`   - http://localhost:${PORT}/debug/transactions`);
       console.log('🔍 All incoming /search and /select requests will be stored in MongoDB Atlas');
     });
