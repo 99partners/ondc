@@ -49,8 +49,17 @@ const UpdateDataSchema = new mongoose.Schema({
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const UpdateData = mongoose.models.UpdateData || mongoose.model('UpdateData', UpdateDataSchema);
 
-// Use existing InitData model instead of redefining it
-const InitData = mongoose.models.InitData;
+// Import InitData model properly
+const InitDataSchema = new mongoose.Schema({
+  transaction_id: { type: String, required: true, index: true },
+  message_id: { type: String, required: true, index: true },
+  context: { type: Object, required: true },
+  message: { type: Object, required: true },
+  order: { type: Object },
+  created_at: { type: Date, default: Date.now }
+});
+
+const InitData = mongoose.models.InitData || mongoose.model('InitData', InitDataSchema);
 
 // Function to get init data for a transaction
 async function getInitDataForTransaction(transactionId) {
