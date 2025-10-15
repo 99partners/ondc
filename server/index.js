@@ -10,7 +10,7 @@ const searchRoutes = require('./routes/search');
 const selectRoutes = require('./routes/select');
 const initRoutes = require('./routes/init');
 const confirmRoutes = require('./routes/confirm');
-const cancelRoutes = require('./routes/cancel');
+const updateRoutes = require('./routes/update');
 
 const app = express();
 
@@ -33,7 +33,7 @@ app.use('/search', searchRoutes);
 app.use('/select', selectRoutes);
 app.use('/init', initRoutes);
 app.use('/confirm', confirmRoutes);
-app.use('/cancel', cancelRoutes);
+app.use('/update', updateRoutes);
 
 // Debug endpoint for transaction trails
 app.get('/debug/transactions', async (req, res) => {
@@ -70,7 +70,7 @@ mongoose.connect(MONGODB_URI, {
       console.log(`   - http://localhost:${PORT}/select/debug`);
       console.log(`   - http://localhost:${PORT}/init/debug`);
       console.log(`   - http://localhost:${PORT}/confirm/debug`);
-      console.log(`   - http://localhost:${PORT}/cancel/debug`);
+      console.log(`   - http://localhost:${PORT}/update/debug`);
       console.log(`   - http://localhost:${PORT}/debug/transactions`);
       console.log('🔍 All incoming /search and /select requests will be stored in MongoDB Atlas');
     });
