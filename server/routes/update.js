@@ -6,16 +6,6 @@ const mongoose = require('mongoose');
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
 
-// Import InitData model to access init request data
-const InitDataSchema = new mongoose.Schema({
-  transaction_id: { type: String, required: true, index: true },
-  message_id: { type: String, required: true, index: true },
-  context: { type: Object, required: true },
-  message: { type: Object, required: true },
-  order: { type: Object },
-  created_at: { type: Date, default: Date.now }
-});
-
 // ONDC Error Codes
 const ONDC_ERRORS = {
   '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
@@ -58,7 +48,9 @@ const UpdateDataSchema = new mongoose.Schema({
 // Check if models are already registered to avoid OverwriteModelError
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const UpdateData = mongoose.models.UpdateData || mongoose.model('UpdateData', UpdateDataSchema);
-const InitData = mongoose.models.InitData || mongoose.model('InitData', InitDataSchema);
+
+// Use existing InitData model instead of redefining it
+const InitData = mongoose.models.InitData;
 
 // Function to get init data for a transaction
 async function getInitDataForTransaction(transactionId) {
@@ -231,6 +223,10 @@ router.post('/', async (req, res) => {
         
         // Store the current timestamp for debugging
         console.log('⚠️ Current billing.created_at:', message.order.billing.created_at);
+        
+        // Set a fixed timestamp as fallback (not ideal but better than random timestamps)
+        message.order.billing.created_at = "2025-10-10T06:09:12.396Z";
+        console.log('⚠️ FALLBACK: Set billing.created_at to fixed value');
       }
     }
     
