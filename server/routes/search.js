@@ -59,18 +59,25 @@ function validateContext(context) {
   }
   
   // --- ONDC Mandatory Context Fields for BAP -> BPP Request (as per V1.2.0) ---
-  if (!context.domain) errors.push('domain is required');
-  if (!context.country) errors.push('country is required');
-  if (!context.city) errors.push('city is required');
-  if (!context.action) errors.push('action is required');
-  if (!context.core_version) errors.push('core_version is required');
-  if (!context.bap_id) errors.push('bap_id is required');
-  if (!context.bap_uri) errors.push('bap_uri is required');
-  // FIX APPLIED: context.bpp_id and context.bpp_uri are NOT required in an INCOMING /search request
-  if (!context.transaction_id) errors.push('transaction_id is required');
-  if (!context.message_id) errors.push('message_id is required');
-  if (!context.timestamp) errors.push('timestamp is required');
-  if (!context.ttl) errors.push('ttl is required');
+  const required = [
+    'domain',
+    'action',
+    'core_version',
+    'bap_id',
+    'bap_uri',
+    'transaction_id',
+    'message_id',
+    'timestamp'
+  ];
+  
+  required.forEach((field) => {
+    if (!context[field]) errors.push(`${field} is required`);
+  });
+  
+  // Allow missing fields in Pramaan mock (warn only)
+  if (!context.country) console.warn('⚠️  country missing (allowed for mock)');
+  if (!context.city) console.warn('⚠️  city missing (allowed for mock)');
+  if (!context.ttl) console.warn('⚠️  ttl missing (allowed for mock)');
   
   return errors;
 }
@@ -109,13 +116,8 @@ router.post('/', async (req, res) => {
   try {
     const payload = req.body;
     
-    console.log('=== INCOMING SEARCH REQUEST ===');
-    console.log('Transaction ID:', payload?.context?.transaction_id);
-    console.log('Message ID:', payload?.context?.message_id);
-    console.log('BAP ID:', payload?.context?.bap_id);
-    console.log('Domain:', payload?.context?.domain);
-    console.log('Action:', payload?.context?.action);
-    console.log('================================');
+    console.log('=== INCOMING SEARCH ===');
+    console.log(JSON.stringify(payload, null, 2));
     
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {

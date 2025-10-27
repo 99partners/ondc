@@ -7,6 +7,7 @@ const path = require('path');
 
 // Import route files
 const searchRoutes = require('./routes/search');
+const searchPramaanRoutes = require('./routes/search-pramaan');
 const selectRoutes = require('./routes/select');
 const initRoutes = require('./routes/init');
 const confirmRoutes = require('./routes/confirm');
@@ -29,7 +30,8 @@ const MONGODB_URI = 'mongodb+srv://99partnersin:99Partnersin@ondcseller.nmuucu3.
 app.get('/health', (req, res) => res.json({ status: 'OK', timestamp: new Date().toISOString() }));
 
 // Use route files
-app.use('/search', searchRoutes);
+app.use('/search', searchRoutes); // Standard search endpoint
+app.use('/search', searchPramaanRoutes); // Pramaan mock search endpoint
 app.use('/select', selectRoutes);
 app.use('/init', initRoutes);
 app.use('/confirm', confirmRoutes);
@@ -67,12 +69,16 @@ mongoose.connect(MONGODB_URI, {
       console.log(`🚀 ONDC Seller BPP listening on http://localhost:${PORT}`);
       console.log('📊 Debug endpoints available:');
       console.log(`   - http://localhost:${PORT}/search/debug`);
+      console.log(`   - http://localhost:${PORT}/search/pramaan/debug`);
       console.log(`   - http://localhost:${PORT}/select/debug`);
       console.log(`   - http://localhost:${PORT}/init/debug`);
       console.log(`   - http://localhost:${PORT}/confirm/debug`);
       console.log(`   - http://localhost:${PORT}/update/debug`);
       console.log(`   - http://localhost:${PORT}/debug/transactions`);
-      console.log('🔍 All incoming /search and /select requests will be stored in MongoDB Atlas');
+      console.log('🔍 Search endpoints:');
+      console.log(`   - POST http://localhost:${PORT}/search (Standard)`);
+      console.log(`   - POST http://localhost:${PORT}/search/pramaan (Pramaan Mock)`);
+      console.log('📊 All incoming /search and /select requests will be stored in MongoDB Atlas');
     });
   }
 })
