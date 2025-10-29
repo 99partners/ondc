@@ -59,25 +59,18 @@ function validateContext(context) {
   }
   
   // --- ONDC Mandatory Context Fields for BAP -> BPP Request (as per V1.2.0) ---
-  const required = [
-    'domain',
-    'action',
-    'core_version',
-    'bap_id',
-    'bap_uri',
-    'transaction_id',
-    'message_id',
-    'timestamp'
-  ];
-  
-  required.forEach((field) => {
-    if (!context[field]) errors.push(`${field} is required`);
-  });
-  
-  // Allow missing fields in Pramaan mock (warn only)
-  if (!context.country) console.warn('⚠️  country missing (allowed for mock)');
-  if (!context.city) console.warn('⚠️  city missing (allowed for mock)');
-  if (!context.ttl) console.warn('⚠️  ttl missing (allowed for mock)');
+  if (!context.domain) errors.push('domain is required');
+  if (!context.country) errors.push('country is required');
+  if (!context.city) errors.push('city is required');
+  if (!context.action) errors.push('action is required');
+  if (!context.core_version) errors.push('core_version is required');
+  if (!context.bap_id) errors.push('bap_id is required');
+  if (!context.bap_uri) errors.push('bap_uri is required');
+  // FIX APPLIED: context.bpp_id and context.bpp_uri are NOT required in an INCOMING /search request
+  if (!context.transaction_id) errors.push('transaction_id is required');
+  if (!context.message_id) errors.push('message_id is required');
+  if (!context.timestamp) errors.push('timestamp is required');
+  if (!context.ttl) errors.push('ttl is required');
   
   return errors;
 }
@@ -116,8 +109,28 @@ router.post('/', async (req, res) => {
   try {
     const payload = req.body;
     
-    console.log('=== INCOMING SEARCH ===');
-    console.log(JSON.stringify(payload, null, 2));
+    console.log('=== INCOMING SEARCH REQUEST ===');
+    console.log('Transaction ID:', payload?.context?.transaction_id);
+    console.log('Message ID:', payload?.context?.message_id);
+    console.log('BAP ID:', payload?.context?.bap_id);
+    console.log('Domain:', payload?.context?.domain);
+    console.log('Action:', payload?.context?.action);
+    console.log('================================');
+    
+    // Store ALL incoming search requests regardless of validation status
+    try {
+      const searchData = new SearchData({
+        transaction_id: payload?.context?.transaction_id || 'unknown',
+        message_id: payload?.context?.message_id || 'unknown',
+        context: payload?.context ? JSON.parse(JSON.stringify(payload.context)) : {},
+        message: payload?.message ? JSON.parse(JSON.stringify(payload.message)) : {},
+        intent: payload?.message?.intent ? JSON.parse(JSON.stringify(payload.message.intent)) : undefined
+      });
+      await searchData.save();
+      console.log('✅ Raw search request saved to MongoDB Atlas database');
+    } catch (dbError) {
+      console.error('❌ Failed to save raw search data:', dbError.message);
+    }
     
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
@@ -164,18 +177,22 @@ router.post('/', async (req, res) => {
 
     // Store search data in MongoDB Atlas - MANDATORY as requested
     try {
+      // Store ALL incoming search requests without any filtering
       const searchData = new SearchData({
         transaction_id: context.transaction_id,
         message_id: context.message_id,
-        context,
-        message,
-        intent: message.intent
+        context: JSON.parse(JSON.stringify(context)), // Deep copy to ensure all data is stored
+        message: JSON.parse(JSON.stringify(message)), // Deep copy to ensure all data is stored
+        intent: message.intent ? JSON.parse(JSON.stringify(message.intent)) : undefined
       });
+      
+      // Use await to ensure the data is saved before proceeding
       await searchData.save();
       console.log('✅ Search data saved to MongoDB Atlas database');
       console.log('📊 Saved search request for transaction:', context.transaction_id);
     } catch (dbError) {
       console.error('❌ Failed to save search data to MongoDB Atlas:', dbError.message);
+      console.error('Error details:', dbError);
       // Continue execution but log the error
     }
 
@@ -218,13 +235,30 @@ router.post('/', async (req, res) => {
 // Debug endpoints to view stored data
 router.get('/debug', async (req, res) => {
   try {
-    const searchRequests = await SearchData.find().sort({ created_at: -1 }).limit(50);
+    // Get query parameters for filtering
+    const { limit = 50, transaction_id, message_id, bap_id } = req.query;
+    
+    // Build query based on filters
+    const query = {};
+    if (transaction_id) query['context.transaction_id'] = transaction_id;
+    if (message_id) query['context.message_id'] = message_id;
+    if (bap_id) query['context.bap_id'] = bap_id;
+    
+    // Get search requests with pagination and filtering
+    const searchRequests = await SearchData.find(query)
+      .sort({ created_at: -1 })
+      .limit(parseInt(limit));
+    
+    // Return formatted response
     res.json({
       count: searchRequests.length,
+      total_in_db: await SearchData.countDocuments(),
+      filters_applied: { transaction_id, message_id, bap_id, limit },
       requests: searchRequests
     });
     
   } catch (error) {
+    console.error('Error in /search/debug endpoint:', error);
     res.status(500).json({ error: error.message });
   }
 });
