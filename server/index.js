@@ -29,6 +29,15 @@ const MONGODB_URI = 'mongodb+srv://99partnersin:99Partnersin@ondcseller.nmuucu3.
 // Health endpoint
 app.get('/health', (req, res) => res.json({ status: 'OK', timestamp: new Date().toISOString() }));
 
+// Root endpoint - helpful message instead of "Cannot GET /"
+app.get('/', (req, res) => {
+  res.json({
+    service: 'ONDC Seller BPP',
+    status: 'running',
+    message: 'Use POST /search for ONDC search requests. See /health for status.'
+  });
+});
+
 // Use route files
 app.use('/search', searchRoutes); // Standard search endpoint
 app.use('/search', searchPramaanRoutes); // Pramaan mock search endpoint
