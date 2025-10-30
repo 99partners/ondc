@@ -16,8 +16,20 @@ const updateRoutes = require('./routes/update');
 const app = express();
 
 // Middleware
-const CORS_ORIGINS = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-app.use(CORS_ORIGINS.length ? cors({ origin: CORS_ORIGINS }) : cors());
+const allowedOrigins = [
+  'https://pramaan.ondc.org',
+  'https://pramaan.ondc.org/beta/staging/mock'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+}));
 app.use(bodyParser.json({ limit: '5mb' }));
 
 const PORT = process.env.PORT || 3000;
