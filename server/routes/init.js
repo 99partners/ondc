@@ -159,21 +159,34 @@ router.post('/', async (req, res) => {
       return res.status(400).json(errorResponse);
     }
 
-    // Store init data in MongoDB Atlas
-    try {
-      const initData = new InitData({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        context,
-        message,
-        order: message.order
-      });
-      await initData.save();
-      console.log('✅ Init data saved to MongoDB Atlas database');
-      console.log('📊 Saved init request for transaction:', context.transaction_id);
-    } catch (dbError) {
-      console.error('❌ Failed to save init data to MongoDB Atlas:', dbError.message);
-      // Continue execution but log the error
+    // Store init data in MongoDB Atlas with retry mechanism
+    let retries = 0;
+    const maxRetries = 3;
+    
+    while (retries < maxRetries) {
+      try {
+        const initData = new InitData({
+          transaction_id: context.transaction_id,
+          message_id: context.message_id,
+          context,
+          message,
+          order: message.order
+        });
+        await initData.save();
+        console.log('✅ Init data saved to MongoDB Atlas database');
+        console.log('📊 Saved init request for transaction:', context.transaction_id);
+        break; // Exit the loop if successful
+      } catch (dbError) {
+        retries++;
+        console.error(`❌ Failed to save init data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
+        
+        if (retries >= maxRetries) {
+          console.error('❌ Max retries reached. Could not save init data.');
+        } else {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
     }
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit

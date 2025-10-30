@@ -161,21 +161,34 @@ router.post('/', async (req, res) => {
       return res.status(400).json(errorResponse);
     }
 
-    // Store status data in MongoDB Atlas
-    try {
-      const statusData = new StatusData({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        context,
-        message,
-        order_id: message.order_id
-      });
-      await statusData.save();
-      console.log('✅ Status data saved to MongoDB Atlas database');
-      console.log('📊 Saved status request for transaction:', context.transaction_id);
-    } catch (dbError) {
-      console.error('❌ Failed to save status data to MongoDB Atlas:', dbError.message);
-      // Continue execution but log the error
+    // Store status data in MongoDB Atlas with retry mechanism
+    let retries = 0;
+    const maxRetries = 3;
+    
+    while (retries < maxRetries) {
+      try {
+        const statusData = new StatusData({
+          transaction_id: context.transaction_id,
+          message_id: context.message_id,
+          context,
+          message,
+          order_id: message.order_id
+        });
+        await statusData.save();
+        console.log('✅ Status data saved to MongoDB Atlas database');
+        console.log('📊 Saved status request for transaction:', context.transaction_id);
+        break; // Exit the loop if successful
+      } catch (dbError) {
+        retries++;
+        console.error(`❌ Failed to save status data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
+        
+        if (retries >= maxRetries) {
+          console.error('❌ Max retries reached. Could not save status data.');
+        } else {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
     }
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit

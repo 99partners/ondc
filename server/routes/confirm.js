@@ -518,33 +518,46 @@ router.post('/', async (req, res) => {
       return res.status(400).json(errorResponse);
     }
 
-    // Store confirm data in MongoDB Atlas
-    try {
-      // Get the created_at timestamp from init data if available
-      let createdAt = new Date();
-      if (initData && initData.created_at) {
-        createdAt = initData.created_at;
-        console.log('✅ Using created_at timestamp from init:', createdAt);
-      }
+    // Store confirm data in MongoDB Atlas with retry mechanism
+    let retries = 0;
+    const maxRetries = 3;
+    
+    while (retries < maxRetries) {
+      try {
+        // Get the created_at timestamp from init data if available
+        let createdAt = new Date();
+        if (initData && initData.created_at) {
+          createdAt = initData.created_at;
+          console.log('✅ Using created_at timestamp from init:', createdAt);
+        }
 
-      const confirmData = new ConfirmData({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        context,
-        message,
-        order: message.order,
-        billing_matched: billingMatched,
-        init_billing_created_at: initBillingCreatedAt,
-        confirm_billing_created_at: confirmBillingCreatedAt,
-        created_at: createdAt // Use the same created_at as init
-      });
-      await confirmData.save();
-      console.log('✅ Confirm data saved to MongoDB Atlas database');
-      console.log('📊 Saved confirm request for transaction:', context.transaction_id);
-      console.log('💳 Billing matched:', billingMatched);
-    } catch (dbError) {
-      console.error('❌ Failed to save confirm data to MongoDB Atlas:', dbError.message);
-      // Continue execution but log the error
+        const confirmData = new ConfirmData({
+          transaction_id: context.transaction_id,
+          message_id: context.message_id,
+          context,
+          message,
+          order: message.order,
+          billing_matched: billingMatched,
+          init_billing_created_at: initBillingCreatedAt,
+          confirm_billing_created_at: confirmBillingCreatedAt,
+          created_at: createdAt // Use the same created_at as init
+        });
+        await confirmData.save();
+        console.log('✅ Confirm data saved to MongoDB Atlas database');
+        console.log('📊 Saved confirm request for transaction:', context.transaction_id);
+        console.log('💳 Billing matched:', billingMatched);
+        break; // Exit the loop if successful
+      } catch (dbError) {
+        retries++;
+        console.error(`❌ Failed to save confirm data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
+        
+        if (retries >= maxRetries) {
+          console.error('❌ Max retries reached. Could not save confirm data.');
+        } else {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
     }
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit

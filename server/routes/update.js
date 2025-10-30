@@ -239,17 +239,36 @@ router.post('/', async (req, res) => {
       }
     }
     
-    // Store update data
-    const updateData = new UpdateData({
-      transaction_id: context.transaction_id,
-      message_id: context.message_id,
-      context,
-      message,
-      order: message.order,
-      created_at: initData ? initData.created_at : new Date()
-    });
+    // Store update data with retry mechanism
+    let retries = 0;
+    const maxRetries = 3;
     
-    await updateData.save();
+    while (retries < maxRetries) {
+      try {
+        const updateData = new UpdateData({
+          transaction_id: context.transaction_id,
+          message_id: context.message_id,
+          context,
+          message,
+          order: message.order,
+          created_at: initData ? initData.created_at : new Date()
+        });
+        await updateData.save();
+        console.log('✅ Update data saved to MongoDB Atlas database');
+        console.log('📊 Saved update request for transaction:', context.transaction_id);
+        break; // Exit the loop if successful
+      } catch (dbError) {
+        retries++;
+        console.error(`❌ Failed to save update data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
+        
+        if (retries >= maxRetries) {
+          console.error('❌ Max retries reached. Could not save update data.');
+        } else {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+    }
     console.log(`✅ Update data stored: ${context.transaction_id}/${context.message_id}`);
     
     // Send ACK response
