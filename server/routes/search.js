@@ -277,7 +277,7 @@ router.post('/', async (req, res) => {
 router.get('/debug', async (req, res) => {
   try {
     // Get query parameters for filtering
-    const { limit = 200, transaction_id, message_id, bap_id } = req.query;
+    const { limit = 20000, transaction_id, message_id, bap_id } = req.query;
     
     // Build query based on filters
     const query = {};
