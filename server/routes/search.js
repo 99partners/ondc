@@ -98,9 +98,9 @@ async function storeTransactionTrail(data) {
   try {
     const trail = new TransactionTrail(data);
     await trail.save();
-    console.log(`✅ Transaction trail stored: ${data.transaction_id}/${data.message_id} - ${data.action} - ${data.status}`);
+    console.log(`✅ Transaction trail stored: ${data.transaction_id}`);
   } catch (error) {
-    console.error('❌ Failed to store transaction trail:', error);
+    console.error('❌ Failed to store transaction trail:', error.message);
   }
 }
 
@@ -117,41 +117,7 @@ router.post('/', async (req, res) => {
     console.log('Action:', payload?.context?.action);
     console.log('================================');
     
-    // Store ALL incoming search requests regardless of validation status
-    try {
-      const searchData = new SearchData({
-        transaction_id: payload?.context?.transaction_id || 'unknown',
-        message_id: payload?.context?.message_id || 'unknown',
-        context: payload?.context ? JSON.parse(JSON.stringify(payload.context)) : {},
-        message: payload?.message ? JSON.parse(JSON.stringify(payload.message)) : {},
-        intent: payload?.message?.intent ? JSON.parse(JSON.stringify(payload.message.intent)) : undefined
-      });
-      
-      // Force save with retry
-      let retries = 3;
-      let saved = false;
-      
-      while (retries > 0 && !saved) {
-        try {
-          await searchData.save();
-          console.log('✅ Raw search request saved to MongoDB Atlas database');
-          saved = true;
-        } catch (saveError) {
-          console.error(`❌ Attempt ${4-retries}/3 failed to save raw search data:`, saveError.message);
-          retries--;
-          if (retries > 0) {
-            // Wait before retry
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        }
-      }
-      
-      if (!saved) {
-        console.error('❌ All attempts to save raw search data failed');
-      }
-    } catch (dbError) {
-      console.error('❌ Failed to save raw search data:', dbError.message);
-    }
+    // We'll store the search data after validation
     
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
@@ -207,33 +173,11 @@ router.post('/', async (req, res) => {
         intent: message.intent ? JSON.parse(JSON.stringify(message.intent)) : undefined
       });
       
-      // Force save with retry mechanism
-      let retries = 3;
-      let saved = false;
-      
-      while (retries > 0 && !saved) {
-        try {
-          // Use await to ensure the data is saved before proceeding
-          await searchData.save();
-          console.log('✅ Search data saved to MongoDB Atlas database');
-          console.log('📊 Saved search request for transaction:', context.transaction_id);
-          saved = true;
-        } catch (saveError) {
-          console.error(`❌ Attempt ${4-retries}/3 failed to save search data:`, saveError.message);
-          retries--;
-          if (retries > 0) {
-            // Wait before retry
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        }
-      }
-      
-      if (!saved) {
-        console.error('❌ All attempts to save search data failed for transaction:', context.transaction_id);
-      }
+      // Save the data with a single attempt
+      await searchData.save();
+      console.log('✅ Search data saved to MongoDB Atlas database for transaction:', context.transaction_id);
     } catch (dbError) {
       console.error('❌ Failed to save search data to MongoDB Atlas:', dbError.message);
-      console.error('Error details:', dbError);
       // Continue execution but log the error
     }
 
