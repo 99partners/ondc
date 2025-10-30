@@ -126,8 +126,29 @@ router.post('/', async (req, res) => {
         message: payload?.message ? JSON.parse(JSON.stringify(payload.message)) : {},
         intent: payload?.message?.intent ? JSON.parse(JSON.stringify(payload.message.intent)) : undefined
       });
-      await searchData.save();
-      console.log('✅ Raw search request saved to MongoDB Atlas database');
+      
+      // Force save with retry
+      let retries = 3;
+      let saved = false;
+      
+      while (retries > 0 && !saved) {
+        try {
+          await searchData.save();
+          console.log('✅ Raw search request saved to MongoDB Atlas database');
+          saved = true;
+        } catch (saveError) {
+          console.error(`❌ Attempt ${4-retries}/3 failed to save raw search data:`, saveError.message);
+          retries--;
+          if (retries > 0) {
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+      }
+      
+      if (!saved) {
+        console.error('❌ All attempts to save raw search data failed');
+      }
     } catch (dbError) {
       console.error('❌ Failed to save raw search data:', dbError.message);
     }
@@ -186,10 +207,30 @@ router.post('/', async (req, res) => {
         intent: message.intent ? JSON.parse(JSON.stringify(message.intent)) : undefined
       });
       
-      // Use await to ensure the data is saved before proceeding
-      await searchData.save();
-      console.log('✅ Search data saved to MongoDB Atlas database');
-      console.log('📊 Saved search request for transaction:', context.transaction_id);
+      // Force save with retry mechanism
+      let retries = 3;
+      let saved = false;
+      
+      while (retries > 0 && !saved) {
+        try {
+          // Use await to ensure the data is saved before proceeding
+          await searchData.save();
+          console.log('✅ Search data saved to MongoDB Atlas database');
+          console.log('📊 Saved search request for transaction:', context.transaction_id);
+          saved = true;
+        } catch (saveError) {
+          console.error(`❌ Attempt ${4-retries}/3 failed to save search data:`, saveError.message);
+          retries--;
+          if (retries > 0) {
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+      }
+      
+      if (!saved) {
+        console.error('❌ All attempts to save search data failed for transaction:', context.transaction_id);
+      }
     } catch (dbError) {
       console.error('❌ Failed to save search data to MongoDB Atlas:', dbError.message);
       console.error('Error details:', dbError);
@@ -236,7 +277,7 @@ router.post('/', async (req, res) => {
 router.get('/debug', async (req, res) => {
   try {
     // Get query parameters for filtering
-    const { limit = 50, transaction_id, message_id, bap_id } = req.query;
+    const { limit = 200, transaction_id, message_id, bap_id } = req.query;
     
     // Build query based on filters
     const query = {};
