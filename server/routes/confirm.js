@@ -56,6 +56,7 @@ async function storeTransactionTrail(data) {
 // ----- CONFIRM GET REQUEST -----
 router.get('/', async (req, res) => {
   try {
+    console.log('➡️  GET /confirm hit', { ip: req.ip, path: req.originalUrl });
     // Extract payload safely (from query params or body if any)
     const payload = req.query || {};
     let rawContext = {};
@@ -84,7 +85,7 @@ router.get('/', async (req, res) => {
         order: message.order
       });
       await confirmData.save();
-      console.log('✅ Confirm request saved to MongoDB');
+      console.log('✅ Confirm GET saved', { tx: confirmData.transaction_id, msg: confirmData.message_id });
     } catch (storeErr) {
       console.error('❌ Failed to store confirm request:', storeErr.message);
     }
@@ -152,7 +153,7 @@ router.get('/', async (req, res) => {
 
     // Send ACK
     const ackResponse = createAckResponse();
-    console.log('✅ ACK sent for confirm request');
+    console.log('✅ ACK sent for confirm GET');
     res.status(202).json(ackResponse);
 
   } catch (error) {
@@ -165,6 +166,7 @@ router.get('/', async (req, res) => {
 // ----- CONFIRM POST REQUEST (primary for ONDC callbacks) -----
 router.post('/', async (req, res) => {
   try {
+    console.log('➡️  POST /confirm hit', { ip: req.ip, path: req.originalUrl });
     const payload = req.body || {};
     const safeContext = ensureSafeContext(payload?.context);
     const message = payload?.message || {};
@@ -180,7 +182,7 @@ router.post('/', async (req, res) => {
         created_at: new Date()
       });
       await confirmData.save();
-      console.log(`✅ Confirm data stored: ${safeContext.transaction_id}/${safeContext.message_id}`);
+      console.log('✅ Confirm POST saved', { tx: confirmData.transaction_id, msg: confirmData.message_id });
     } catch (storeErr) {
       console.error('❌ Failed to store confirm POST:', storeErr.message);
     }
@@ -248,7 +250,7 @@ router.post('/', async (req, res) => {
 
     // ACK
     const ackResponse = createAckResponse();
-    console.log('✅ ACK sent for confirm POST');
+    console.log('✅ ACK sent for confirm POST', { tx: safeContext.transaction_id, msg: safeContext.message_id });
     return res.status(202).json(ackResponse);
   } catch (error) {
     console.error('❌ Error in POST /confirm:', error);
