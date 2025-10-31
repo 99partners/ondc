@@ -1,18 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const { validateContext, ensureSafeContext, createErrorResponse, createAckResponse } = require('../utils/contextValidator');
 
 // BPP Configuration - These should be moved to a config file in a production environment
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
 
-// ONDC Error Codes
-const ONDC_ERRORS = {
-  '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
-  '30022': { type: 'CONTEXT-ERROR', code: '30022', message: 'Invalid timestamp' },
-  '10001': { type: 'CONTEXT-ERROR', code: '10001', message: 'Invalid context: Mandatory field missing or incorrect value.' },
-  '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' }
-};
+// Using shared validators from ../utils/contextValidator
 
 // Import models - These should be moved to separate model files in a production environment
 const TransactionTrailSchema = new mongoose.Schema({
@@ -49,50 +44,7 @@ const StatusDataSchema = new mongoose.Schema({
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const StatusData = mongoose.models.StatusData || mongoose.model('StatusData', StatusDataSchema);
 
-// Utility Functions
-function validateContext(context) {
-  const errors = [];
-  
-  if (!context) {
-    errors.push('Context is required');
-    return errors;
-  }
-  
-  // --- ONDC Mandatory Context Fields for BAP -> BPP Request (as per V1.2.0) ---
-  if (!context.domain) errors.push('domain is required');
-  if (!context.country) errors.push('country is required');
-  if (!context.city) errors.push('city is required');
-  if (!context.action) errors.push('action is required');
-  if (!context.core_version) errors.push('core_version is required');
-  if (!context.bap_id) errors.push('bap_id is required');
-  if (!context.bap_uri) errors.push('bap_uri is required');
-  if (!context.bpp_id) errors.push('bpp_id is required');
-  if (!context.bpp_uri) errors.push('bpp_uri is required');
-  if (!context.transaction_id) errors.push('transaction_id is required');
-  if (!context.message_id) errors.push('message_id is required');
-  if (!context.timestamp) errors.push('timestamp is required');
-  if (!context.ttl) errors.push('ttl is required');
-  
-  return errors;
-}
-
-function createErrorResponse(errorCode, message) {
-  const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
-  return {
-    message: { ack: { status: 'NACK' } },
-    error: {
-      type: error.type,
-      code: error.code,
-      message: error.message
-    }
-  };
-}
-
-function createAckResponse() {
-  return {
-    message: { ack: { status: 'ACK' } }
-  };
-}
+// Utility functions are imported from ../utils/contextValidator
 
 // Store transaction trail
 async function storeTransactionTrail(data) {
@@ -124,6 +76,7 @@ router.post('/', async (req, res) => {
     
     // Create a safe context object with default values for missing properties
     const safeContext = ensureSafeContext(payload?.context);
+    const { context = safeContext, message = payload.message || {} } = payload;
     
     // Basic validation
     if (!payload || !payload.context || !payload.message) {

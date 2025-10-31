@@ -82,6 +82,7 @@ router.post('/', async (req, res) => {
     
     // Create a safe context object with default values for missing properties
     const safeContext = ensureSafeContext(payload?.context);
+    const { context = safeContext, message = payload.message || {} } = payload;
     
     // Basic validation
     if (!payload || !payload.context || !payload.message) {
