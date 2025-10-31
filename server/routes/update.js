@@ -128,37 +128,71 @@ async function storeTransactionTrail(data) {
 
 // POST /update - Handle update requests
 router.post('/', async (req, res) => {
-  console.log('📝 Received update request');
-  
   try {
-    const { context, message } = req.body;
+    // Safely extract payload with defaults if req.body is undefined
+    const payload = req.body || {};
     
-    // Validate context
-    const contextErrors = validateContext(context);
-    if (contextErrors.length > 0) {
-      console.error('❌ Context validation failed:', contextErrors);
-      
-      // Store transaction trail for NACK
+    // Store all incoming requests regardless of validation
+    try {
+      const updateData = new UpdateData({
+        requestBody: payload,
+        timestamp: new Date()
+      });
+      await updateData.save();
+    } catch (storeError) {
+      console.error('❌ Failed to store incoming update request:', storeError.message);
+    }
+    
+    // Create a safe context object with default values for missing properties
+    const safeContext = ensureSafeContext(payload?.context);
+    
+    // Basic validation
+    if (!payload || !payload.context || !payload.message) {
+      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
       await storeTransactionTrail({
-        transaction_id: context?.transaction_id || 'unknown',
-        message_id: context?.message_id || 'unknown',
-        action: context?.action || 'update',
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
+        action: 'update',
         direction: 'incoming',
         status: 'NACK',
-        context: context || {},
-        error: { message: contextErrors.join(', ') },
+        context: safeContext,
+        error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: context?.bap_id,
-        bap_uri: context?.bap_uri,
+        bap_id: safeContext.bap_id,
+        bap_uri: safeContext.bap_uri,
         bpp_id: BPP_ID,
         bpp_uri: BPP_URI,
-        domain: context?.domain,
-        country: context?.country,
-        city: context?.city,
-        core_version: context?.core_version
+        domain: safeContext.domain,
+        country: safeContext.country,
+        city: safeContext.city,
+        core_version: safeContext.core_version
       });
-      
-      return res.status(400).json(createErrorResponse('10001', contextErrors.join(', ')));
+      return res.status(400).json(errorResponse);
+    }
+    
+    // Validate context
+    const contextErrors = validateContext(payload.context);
+    if (contextErrors.length > 0) {
+      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
+      await storeTransactionTrail({
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
+        action: safeContext.action,
+        direction: 'incoming',
+        status: 'NACK',
+        context: safeContext,
+        error: errorResponse.error,
+        timestamp: new Date(),
+        bap_id: safeContext.bap_id,
+        bap_uri: safeContext.bap_uri,
+        bpp_id: safeContext.bpp_id || BPP_ID,
+        bpp_uri: safeContext.bpp_uri || BPP_URI,
+        domain: safeContext.domain,
+        country: safeContext.country,
+        city: safeContext.city,
+        core_version: safeContext.core_version
+      });
+      return res.status(400).json(errorResponse);
     }
     
     // Validate message

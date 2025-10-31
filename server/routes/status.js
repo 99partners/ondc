@@ -108,59 +108,72 @@ async function storeTransactionTrail(data) {
 // /status API - Buyer app sends status request
 router.post('/', async (req, res) => {
   try {
-    const payload = req.body;
+    // Safely extract payload with defaults if req.body is undefined
+    const payload = req.body || {};
     
-    console.log('=== INCOMING STATUS REQUEST ===');
-    console.log('Transaction ID:', payload?.context?.transaction_id);
-    console.log('Message ID:', payload?.context?.message_id);
-    console.log('BAP ID:', payload?.context?.bap_id);
-    console.log('Domain:', payload?.context?.domain);
-    console.log('Action:', payload?.context?.action);
-    console.log('================================');
+    // Store all incoming requests regardless of validation
+    try {
+      const statusData = new StatusData({
+        requestBody: payload,
+        timestamp: new Date()
+      });
+      await statusData.save();
+    } catch (storeError) {
+      console.error('❌ Failed to store incoming status request:', storeError.message);
+    }
     
-    // Validate payload structure
+    // Create a safe context object with default values for missing properties
+    const safeContext = ensureSafeContext(payload?.context);
+    
+    // Basic validation
     if (!payload || !payload.context || !payload.message) {
       const errorResponse = createErrorResponse('10001', 'Invalid request structure');
       await storeTransactionTrail({
-        transaction_id: payload?.context?.transaction_id || 'unknown',
-        message_id: payload?.context?.message_id || 'unknown',
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
         action: 'status',
         direction: 'incoming',
         status: 'NACK',
-        context: payload?.context || {},
+        context: safeContext,
         error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: payload?.context?.bap_id,
-        bap_uri: payload?.context?.bap_uri,
+        bap_id: safeContext.bap_id,
+        bap_uri: safeContext.bap_uri,
         bpp_id: BPP_ID,
-        bpp_uri: BPP_URI
+        bpp_uri: BPP_URI,
+        domain: safeContext.domain,
+        country: safeContext.country,
+        city: safeContext.city,
+        core_version: safeContext.core_version
       });
       return res.status(400).json(errorResponse);
     }
-
-    const { context, message } = payload;
     
     // Validate context
-    const contextErrors = validateContext(context);
+    const contextErrors = validateContext(payload.context);
     if (contextErrors.length > 0) {
       const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
       await storeTransactionTrail({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        action: 'status',
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
+        action: safeContext.action,
         direction: 'incoming',
         status: 'NACK',
-        context,
+        context: safeContext,
         error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: context.bap_id,
-        bap_uri: context.bap_uri,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI
+        bap_id: safeContext.bap_id,
+        bap_uri: safeContext.bap_uri,
+        bpp_id: safeContext.bpp_id || BPP_ID,
+        bpp_uri: safeContext.bpp_uri || BPP_URI,
+        domain: safeContext.domain,
+        country: safeContext.country,
+        city: safeContext.city,
+        core_version: safeContext.core_version
       });
       return res.status(400).json(errorResponse);
     }
-
+    
     // Store status data in MongoDB Atlas with retry mechanism
     let retries = 0;
     const maxRetries = 3;

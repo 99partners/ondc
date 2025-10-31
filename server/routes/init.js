@@ -1,18 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const { validateContext, ensureSafeContext, createErrorResponse, createAckResponse } = require('../utils/contextValidator');
 
 // BPP Configuration - These should be moved to a config file in a production environment
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
-
-// ONDC Error Codes
-const ONDC_ERRORS = {
-  '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
-  '30022': { type: 'CONTEXT-ERROR', code: '30022', message: 'Invalid timestamp' },
-  '10001': { type: 'CONTEXT-ERROR', code: '10001', message: 'Invalid context: Mandatory field missing or incorrect value.' },
-  '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' }
-};
 
 // Import models - These should be moved to separate model files in a production environment
 const TransactionTrailSchema = new mongoose.Schema({
@@ -106,55 +99,68 @@ async function storeTransactionTrail(data) {
 // /init API - Buyer app sends init request
 router.post('/', async (req, res) => {
   try {
-    const payload = req.body;
+    // Safely extract payload with defaults if req.body is undefined
+    const payload = req.body || {};
     
-    console.log('=== INCOMING INIT REQUEST ===');
-    console.log('Transaction ID:', payload?.context?.transaction_id);
-    console.log('Message ID:', payload?.context?.message_id);
-    console.log('BAP ID:', payload?.context?.bap_id);
-    console.log('Domain:', payload?.context?.domain);
-    console.log('Action:', payload?.context?.action);
-    console.log('================================');
+    // Store all incoming requests regardless of validation
+    try {
+      const initData = new InitData({
+        requestBody: payload,
+        timestamp: new Date()
+      });
+      await initData.save();
+    } catch (storeError) {
+      console.error('❌ Failed to store incoming init request:', storeError.message);
+    }
     
-    // Validate payload structure
+    // Create a safe context object with default values for missing properties
+    const safeContext = ensureSafeContext(payload?.context);
+    
+    // Basic validation
     if (!payload || !payload.context || !payload.message) {
       const errorResponse = createErrorResponse('10001', 'Invalid request structure');
       await storeTransactionTrail({
-        transaction_id: payload?.context?.transaction_id || 'unknown',
-        message_id: payload?.context?.message_id || 'unknown',
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
         action: 'init',
         direction: 'incoming',
         status: 'NACK',
-        context: payload?.context || {},
+        context: safeContext,
         error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: payload?.context?.bap_id,
-        bap_uri: payload?.context?.bap_uri,
+        bap_id: safeContext.bap_id,
+        bap_uri: safeContext.bap_uri,
         bpp_id: BPP_ID,
-        bpp_uri: BPP_URI
+        bpp_uri: BPP_URI,
+        domain: safeContext.domain,
+        country: safeContext.country,
+        city: safeContext.city,
+        core_version: safeContext.core_version
       });
       return res.status(400).json(errorResponse);
     }
-
-    const { context, message } = payload;
     
     // Validate context
-    const contextErrors = validateContext(context);
+    const contextErrors = validateContext(payload.context);
     if (contextErrors.length > 0) {
       const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
       await storeTransactionTrail({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        action: 'init',
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
+        action: safeContext.action,
         direction: 'incoming',
         status: 'NACK',
-        context,
+        context: safeContext,
         error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: context.bap_id,
-        bap_uri: context.bap_uri,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI
+        bap_id: safeContext.bap_id,
+        bap_uri: safeContext.bap_uri,
+        bpp_id: safeContext.bpp_id || BPP_ID,
+        bpp_uri: safeContext.bpp_uri || BPP_URI,
+        domain: safeContext.domain,
+        country: safeContext.country,
+        city: safeContext.city,
+        core_version: safeContext.core_version
       });
       return res.status(400).json(errorResponse);
     }
@@ -166,15 +172,15 @@ router.post('/', async (req, res) => {
     while (retries < maxRetries) {
       try {
         const initData = new InitData({
-          transaction_id: context.transaction_id,
-          message_id: context.message_id,
-          context,
+          transaction_id: safeContext.transaction_id,
+          message_id: safeContext.message_id,
+          context: safeContext,
           message,
           order: message.order
         });
         await initData.save();
         console.log('✅ Init data saved to MongoDB Atlas database');
-        console.log('📊 Saved init request for transaction:', context.transaction_id);
+        console.log('📊 Saved init request for transaction:', safeContext.transaction_id);
         break; // Exit the loop if successful
       } catch (dbError) {
         retries++;
@@ -192,22 +198,22 @@ router.post('/', async (req, res) => {
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit
     try {
       await storeTransactionTrail({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        action: 'init',
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
+        action: safeContext.action,
         direction: 'incoming',
         status: 'ACK',
-        context,
+        context: safeContext,
         message,
         timestamp: new Date(),
-        bap_id: context.bap_id,
-        bap_uri: context.bap_uri,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI,
-        domain: context.domain,
-        country: context.country,
-        city: context.city,
-        core_version: context.core_version
+        bap_id: safeContext.bap_id,
+        bap_uri: safeContext.bap_uri,
+        bpp_id: safeContext.bpp_id || BPP_ID,
+        bpp_uri: safeContext.bpp_uri || BPP_URI,
+        domain: safeContext.domain,
+        country: safeContext.country,
+        city: safeContext.city,
+        core_version: safeContext.core_version
       });
     } catch (trailError) {
       console.error('❌ Failed to store transaction trail:', trailError.message);
