@@ -14,6 +14,7 @@ const onConfirmRoutes = require('./routes/on_confirm');
 const updateRoutes = require('./routes/update');
 const statusRoutes = require('./routes/status');
 const cancelRoutes = require('./routes/cancel');
+const confirmRouter = require('./routes/confirm');
 
 const app = express();
 
@@ -51,7 +52,8 @@ app.get('/', (req, res) => {
     message: 'Use POST /search for ONDC search requests. See /health for status.'
   });
 });
-
+ // adjust path if needed
+app.use('/confirm', confirmRouter);
 // Use route files
 app.use('/search', searchRoutes); // Standard search endpoint
 app.use('/search', searchPramaanRoutes); // Pramaan mock search endpoint
