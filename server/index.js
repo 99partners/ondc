@@ -12,6 +12,8 @@ const selectRoutes = require('./routes/select');
 const initRoutes = require('./routes/init');
 const confirmRoutes = require('./routes/confirm');
 const updateRoutes = require('./routes/update');
+const statusRoutes = require('./routes/status');
+const cancelRoutes = require('./routes/cancel');
 
 const app = express();
 
@@ -57,6 +59,8 @@ app.use('/select', selectRoutes);
 app.use('/init', initRoutes);
 app.use('/confirm', confirmRoutes);
 app.use('/update', updateRoutes);
+app.use('/status', statusRoutes);
+app.use('/cancel', cancelRoutes);
 
 // Debug endpoint for transaction trails
 app.get('/debug/transactions', async (req, res) => {
