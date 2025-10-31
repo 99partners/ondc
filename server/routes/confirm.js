@@ -630,6 +630,13 @@ router.get('/debug', async (req, res) => {
       if (!safeReq.context) {
         safeReq.context = {};
       }
+      // Ensure all required context properties exist to prevent 'undefined' errors
+      const requiredProps = ['domain', 'action', 'bap_id', 'bap_uri', 'transaction_id', 'message_id', 'timestamp'];
+      requiredProps.forEach(prop => {
+        if (!safeReq.context[prop]) {
+          safeReq.context[prop] = '';
+        }
+      });
       return {
         transaction_id: safeReq.transaction_id,
         message_id: safeReq.message_id,
@@ -646,6 +653,13 @@ router.get('/debug', async (req, res) => {
       if (!safeReq.context) {
         safeReq.context = {};
       }
+      // Ensure all required context properties exist to prevent 'undefined' errors
+      const requiredProps = ['domain', 'action', 'bap_id', 'bap_uri', 'transaction_id', 'message_id', 'timestamp'];
+      requiredProps.forEach(prop => {
+        if (!safeReq.context[prop]) {
+          safeReq.context[prop] = '';
+        }
+      });
       return {
         transaction_id: safeReq.transaction_id,
         message_id: safeReq.message_id,

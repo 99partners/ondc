@@ -236,6 +236,15 @@ router.get('/debug', async (req, res) => {
       if (!safeRequest.context) {
         safeRequest.context = {};
       }
+      
+      // Ensure all required context properties exist to prevent 'undefined' errors
+      const requiredProps = ['domain', 'action', 'bap_id', 'bap_uri', 'transaction_id', 'message_id', 'timestamp'];
+      requiredProps.forEach(prop => {
+        if (!safeRequest.context[prop]) {
+          safeRequest.context[prop] = '';
+        }
+      });
+      
       return safeRequest;
     });
     
