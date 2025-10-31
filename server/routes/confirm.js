@@ -58,8 +58,21 @@ router.get('/', async (req, res) => {
   try {
     // Extract payload safely (from query params or body if any)
     const payload = req.query || {};
-    const safeContext = ensureSafeContext(payload?.context ? JSON.parse(payload.context) : {});
-    const message = payload.message ? JSON.parse(payload.message) : {};
+    let rawContext = {};
+    let message = {};
+    try {
+      rawContext = payload?.context ? JSON.parse(payload.context) : {};
+    } catch (e) {
+      console.warn('⚠️ Failed to parse context from query:', e.message);
+      rawContext = {};
+    }
+    try {
+      message = payload?.message ? JSON.parse(payload.message) : {};
+    } catch (e) {
+      console.warn('⚠️ Failed to parse message from query:', e.message);
+      message = {};
+    }
+    const safeContext = ensureSafeContext(rawContext);
 
     // Store incoming request raw data
     try {
@@ -261,6 +274,26 @@ router.get('/debug', async (req, res) => {
       count: confirmRequests.length,
       requests: safeRequests
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Extra: quick counters to verify persistence
+router.get('/debug/count', async (req, res) => {
+  try {
+    const total = await ConfirmData.countDocuments();
+    res.json({ total_in_db: total });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/debug/recent', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit || '10', 10);
+    const recent = await ConfirmData.find().sort({ created_at: -1 }).limit(limit);
+    res.json({ count: recent.length, recent });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
