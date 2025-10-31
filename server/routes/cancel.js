@@ -64,6 +64,9 @@ router.post('/', async (req, res) => {
     // Safely extract payload with defaults if req.body is undefined
     const payload = req.body || {};
     
+    // Create a safe context object with default values for missing properties
+    const safeContext = ensureSafeContext(payload?.context);
+    
     // Store all incoming requests regardless of validation
     try {
       const cancelData = new CancelData({
@@ -80,9 +83,6 @@ router.post('/', async (req, res) => {
     } catch (storeError) {
       console.error('❌ Failed to store incoming cancel request:', storeError.message);
     }
-    
-    // Create a safe context object with default values for missing properties
-    const safeContext = ensureSafeContext(payload?.context);
     const { message = payload.message || {} } = payload;
     
     // Basic validation
