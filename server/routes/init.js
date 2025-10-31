@@ -229,11 +229,20 @@ router.post('/', async (req, res) => {
 router.get('/debug', async (req, res) => {
   try {
     const initRequests = await InitData.find().sort({ created_at: -1 }).limit(50);
-    res.json({
-      count: initRequests.length,
-      requests: initRequests
+    
+    // Process data to handle undefined context properties
+    const safeRequests = initRequests.map(request => {
+      const safeRequest = request.toObject();
+      if (!safeRequest.context) {
+        safeRequest.context = {};
+      }
+      return safeRequest;
     });
     
+    res.json({
+      count: initRequests.length,
+      requests: safeRequests
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

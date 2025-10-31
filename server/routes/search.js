@@ -234,12 +234,21 @@ router.get('/debug', async (req, res) => {
       .sort({ created_at: -1 })
       .limit(parseInt(limit));
     
+    // Process data to handle undefined context properties
+    const safeRequests = searchRequests.map(request => {
+      const safeRequest = request.toObject();
+      if (!safeRequest.context) {
+        safeRequest.context = {};
+      }
+      return safeRequest;
+    });
+    
     // Return formatted response
     res.json({
       count: searchRequests.length,
       total_in_db: await SearchData.countDocuments(),
       filters_applied: { transaction_id, message_id, bap_id, limit },
-      requests: searchRequests
+      requests: safeRequests
     });
     
   } catch (error) {

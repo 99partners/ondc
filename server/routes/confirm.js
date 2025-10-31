@@ -624,23 +624,42 @@ router.get('/debug', async (req, res) => {
     const confirmRequests = await ConfirmData.find().sort({ created_at: -1 }).limit(50);
     const initRequests = await InitData.find().sort({ created_at: -1 }).limit(50);
     
+    // Process data to handle undefined context properties
+    const safeConfirmRequests = confirmRequests.map(req => {
+      const safeReq = req.toObject ? req.toObject() : {...req};
+      if (!safeReq.context) {
+        safeReq.context = {};
+      }
+      return {
+        transaction_id: safeReq.transaction_id,
+        message_id: safeReq.message_id,
+        context: safeReq.context,
+        billing_matched: safeReq.billing_matched,
+        init_billing_created_at: safeReq.init_billing_created_at,
+        confirm_billing_created_at: safeReq.confirm_billing_created_at,
+        created_at: safeReq.created_at
+      };
+    });
+    
+    const safeInitRequests = initRequests.map(req => {
+      const safeReq = req.toObject ? req.toObject() : {...req};
+      if (!safeReq.context) {
+        safeReq.context = {};
+      }
+      return {
+        transaction_id: safeReq.transaction_id,
+        message_id: safeReq.message_id,
+        context: safeReq.context,
+        billing_created_at: safeReq.message?.order?.billing?.created_at,
+        created_at: safeReq.created_at
+      };
+    });
+    
     res.json({
       confirm_count: confirmRequests.length,
       init_count: initRequests.length,
-      confirm_requests: confirmRequests.map(req => ({
-        transaction_id: req.transaction_id,
-        message_id: req.message_id,
-        billing_matched: req.billing_matched,
-        init_billing_created_at: req.init_billing_created_at,
-        confirm_billing_created_at: req.confirm_billing_created_at,
-        created_at: req.created_at
-      })),
-      init_requests: initRequests.map(req => ({
-        transaction_id: req.transaction_id,
-        message_id: req.message_id,
-        billing_created_at: req.message?.order?.billing?.created_at,
-        created_at: req.created_at
-      }))
+      confirm_requests: safeConfirmRequests,
+      init_requests: safeInitRequests
     });
     
   } catch (error) {

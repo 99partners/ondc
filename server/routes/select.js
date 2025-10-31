@@ -231,9 +231,19 @@ router.post('/', async (req, res) => {
 router.get('/debug', async (req, res) => {
   try {
     const selectRequests = await SelectData.find().sort({ created_at: -1 }).limit(50);
+    
+    // Process data to handle undefined context properties
+    const safeRequests = selectRequests.map(request => {
+      const safeRequest = request.toObject();
+      if (!safeRequest.context) {
+        safeRequest.context = {};
+      }
+      return safeRequest;
+    });
+    
     res.json({
       count: selectRequests.length,
-      requests: selectRequests
+      requests: safeRequests
     });
     
   } catch (error) {

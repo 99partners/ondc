@@ -287,9 +287,18 @@ router.get('/debug', async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const updateData = await UpdateData.find().sort({ created_at: -1 }).limit(limit);
     
+    // Process data to handle undefined context properties
+    const safeData = updateData.map(item => {
+      const safeItem = item.toObject();
+      if (!safeItem.context) {
+        safeItem.context = {};
+      }
+      return safeItem;
+    });
+    
     return res.status(200).json({
       count: updateData.length,
-      data: updateData
+      data: safeData
     });
   } catch (error) {
     console.error('❌ Error retrieving update data:', error);
