@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const { validateContext, ensureSafeContext, createErrorResponse, createAckResponse } = require('../utils/contextValidator');
 
 // BPP Configuration - These should be moved to a config file in a production environment
 const BPP_ID = 'staging.99digicom.com';
@@ -16,12 +17,8 @@ const InitDataSchema = new mongoose.Schema({
   created_at: { type: Date, default: Date.now }
 });
 
-// ONDC Error Codes
+// ONDC Error Codes (kept only if needed elsewhere); pulled from utils for responses
 const ONDC_ERRORS = {
-  '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
-  '30022': { type: 'CONTEXT-ERROR', code: '30022', message: 'Invalid timestamp' },
-  '10001': { type: 'CONTEXT-ERROR', code: '10001', message: 'Invalid context: Mandatory field missing or incorrect value.' },
-  '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' },
   '20006': { type: 'DOMAIN-ERROR', code: '20006', message: 'Invalid response: billing timestamp mismatch' }
 };
 
@@ -76,47 +73,7 @@ async function getInitDataForTransaction(transactionId) {
 }
 
 // Utility Functions
-function validateContext(context) {
-  const errors = [];
-  
-  if (!context) {
-    errors.push('Context is required');
-    return errors;
-  }
-  
-  // --- ONDC Mandatory Context Fields for BAP -> BPP Request (as per V1.2.0) ---
-  if (!context.domain) errors.push('domain is required');
-  if (!context.country) errors.push('country is required');
-  if (!context.city) errors.push('city is required');
-  if (!context.action) errors.push('action is required');
-  if (!context.core_version) errors.push('core_version is required');
-  if (!context.bap_id) errors.push('bap_id is required');
-  if (!context.bap_uri) errors.push('bap_uri is required');
-  if (!context.transaction_id) errors.push('transaction_id is required');
-  if (!context.message_id) errors.push('message_id is required');
-  if (!context.timestamp) errors.push('timestamp is required');
-  if (!context.ttl) errors.push('ttl is required');
-  
-  return errors;
-}
-
-function createErrorResponse(errorCode, message) {
-  const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
-  return {
-    message: { ack: { status: 'NACK' } },
-    error: {
-      type: error.type,
-      code: error.code,
-      message: error.message
-    }
-  };
-}
-
-function createAckResponse() {
-  return {
-    message: { ack: { status: 'ACK' } }
-  };
-}
+// Validation and response helpers are imported from '../utils/contextValidator'
 
 // Store transaction trail
 async function storeTransactionTrail(data) {
@@ -132,37 +89,57 @@ async function storeTransactionTrail(data) {
 // /confirm API - Buyer app sends confirm request
 router.post('/', async (req, res) => {
   try {
-    const payload = req.body;
+    const payload = req.body || {};
+    // Create a safe context and message using shared utils (select/init reference)
+    const safeContext = ensureSafeContext(payload?.context);
+    const message = payload.message || {};
     
     console.log('=== INCOMING CONFIRM REQUEST ===');
-    console.log('Transaction ID:', payload?.context?.transaction_id);
-    console.log('Message ID:', payload?.context?.message_id);
-    console.log('BAP ID:', payload?.context?.bap_id);
-    console.log('Domain:', payload?.context?.domain);
-    console.log('Action:', payload?.context?.action);
+    console.log('Transaction ID:', safeContext.transaction_id);
+    console.log('Message ID:', safeContext.message_id);
+    console.log('BAP ID:', safeContext.bap_id);
+    console.log('Domain:', safeContext.domain);
+    console.log('Action:', safeContext.action);
     console.log('================================');
     
+    // Store all incoming requests regardless of validation (align with select)
+    try {
+      const incomingData = new ConfirmData({
+        transaction_id: safeContext.transaction_id || 'unknown',
+        message_id: safeContext.message_id || 'unknown',
+        context: payload.context || {},
+        message: payload.message || {},
+        order: payload.message?.order || {},
+        created_at: new Date()
+      });
+      await incomingData.save();
+      console.log(`✅ Raw confirm data stored: ${safeContext.transaction_id}/${safeContext.message_id}`);
+    } catch (storeErr) {
+      console.error('❌ Failed to store raw confirm request:', storeErr.message);
+    }
+
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
       const errorResponse = createErrorResponse('10001', 'Invalid request structure');
       await storeTransactionTrail({
-        transaction_id: payload?.context?.transaction_id || 'unknown',
-        message_id: payload?.context?.message_id || 'unknown',
+        transaction_id: safeContext.transaction_id || 'unknown',
+        message_id: safeContext.message_id || 'unknown',
         action: 'confirm',
         direction: 'incoming',
         status: 'NACK',
-        context: payload?.context || {},
+        context: safeContext,
         error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: payload?.context?.bap_id,
-        bap_uri: payload?.context?.bap_uri,
+        bap_id: safeContext.bap_id,
+        bap_uri: safeContext.bap_uri,
         bpp_id: BPP_ID,
         bpp_uri: BPP_URI
       });
       return res.status(400).json(errorResponse);
     }
-
-    const { context, message } = payload;
+    
+    // Use original context but fall back to safeContext for completeness
+    const context = payload.context || safeContext;
     
     // ✅ CRITICAL FIX: Get init data FIRST and override billing BEFORE validation
     const initData = await getInitDataForTransaction(context.transaction_id);
@@ -331,23 +308,15 @@ router.post('/', async (req, res) => {
 router.get('/debug', async (req, res) => {
   try {
     const confirmRequests = await ConfirmData.find().sort({ created_at: -1 }).limit(50);
-    const initRequests = await InitData.find().sort({ created_at: -1 }).limit(50);
     
     res.json({
       confirm_count: confirmRequests.length,
-      init_count: initRequests.length,
       confirm_requests: confirmRequests.map(req => ({
         transaction_id: req.transaction_id,
         message_id: req.message_id,
         billing_matched: req.billing_matched,
         init_billing_created_at: req.init_billing_created_at,
         confirm_billing_created_at: req.confirm_billing_created_at,
-        created_at: req.created_at
-      })),
-      init_requests: initRequests.map(req => ({
-        transaction_id: req.transaction_id,
-        message_id: req.message_id,
-        billing_created_at: req.message?.order?.billing?.created_at,
         created_at: req.created_at
       }))
     });
@@ -361,16 +330,10 @@ router.get('/debug', async (req, res) => {
 router.get('/debug/:transaction_id', async (req, res) => {
   try {
     const { transaction_id } = req.params;
-    const initData = await getInitDataForTransaction(transaction_id);
     const confirmData = await ConfirmData.find({ transaction_id }).sort({ created_at: -1 });
     
     res.json({
       transaction_id,
-      init_data: initData ? {
-        message_id: initData.message_id,
-        billing: initData.message?.order?.billing,
-        created_at: initData.created_at
-      } : null,
       confirm_attempts: confirmData.map(item => ({
         message_id: item.message_id,
         billing_matched: item.billing_matched,
