@@ -391,9 +391,9 @@ function validateContext(context) {
   return errors;
 }
 
-function createErrorResponse(errorCode, message, context = null) {
+function createErrorResponse(errorCode, message) {
   const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
-  const response = {
+  return {
     message: { ack: { status: 'NACK' } },
     error: {
       type: error.type,
@@ -401,18 +401,10 @@ function createErrorResponse(errorCode, message, context = null) {
       message: error.message
     }
   };
-  
-  // Include context if available
-  if (context) {
-    response.context = context;
-  }
-  
-  return response;
 }
 
-function createAckResponse(context) {
+function createAckResponse() {
   return {
-    context: context,
     message: { ack: { status: 'ACK' } }
   };
 }
@@ -443,7 +435,7 @@ router.post('/', async (req, res) => {
     
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
-      const errorResponse = createErrorResponse('10001', 'Invalid request structure', payload?.context || null);
+      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
       await storeTransactionTrail({
         transaction_id: payload?.context?.transaction_id || 'unknown',
         message_id: payload?.context?.message_id || 'unknown',
@@ -508,7 +500,7 @@ router.post('/', async (req, res) => {
     // Validate context (with corrected billing data if available)
     const contextErrors = validateContext(context);
     if (contextErrors.length > 0) {
-      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`, context);
+      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
       await storeTransactionTrail({
         transaction_id: context.transaction_id,
         message_id: context.message_id,
@@ -593,14 +585,14 @@ router.post('/', async (req, res) => {
     }
 
     // Send ACK response
-    const ackResponse = createAckResponse(context);
+    const ackResponse = createAckResponse();
     console.log('✅ Sending ACK response for confirm request');
     console.log('🎯 Billing timestamp handling:', billingMatched ? 'MATCHED' : 'NOT MATCHED');
     res.status(202).json(ackResponse);
     
   } catch (error) {
     console.error('❌ Error in /confirm:', error);
-    const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`, req.body?.context || null);
+    const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`);
     
     // Store error in transaction trail
     try {

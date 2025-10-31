@@ -97,9 +97,9 @@ function validateContext(context) {
   return errors;
 }
 
-function createErrorResponse(errorCode, message, context = null) {
+function createErrorResponse(errorCode, message) {
   const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
-  const response = {
+  return {
     message: { ack: { status: 'NACK' } },
     error: {
       type: error.type,
@@ -107,18 +107,10 @@ function createErrorResponse(errorCode, message, context = null) {
       message: error.message
     }
   };
-  
-  // Include context if available
-  if (context) {
-    response.context = context;
-  }
-  
-  return response;
 }
 
-function createAckResponse(context) {
+function createAckResponse() {
   return {
-    context: context,
     message: { ack: { status: 'ACK' } }
   };
 }
@@ -166,7 +158,7 @@ router.post('/', async (req, res) => {
         core_version: context?.core_version
       });
       
-      return res.status(400).json(createErrorResponse('10001', contextErrors.join(', '), context));
+      return res.status(400).json(createErrorResponse('10001', contextErrors.join(', ')));
     }
     
     // Validate message
@@ -193,7 +185,7 @@ router.post('/', async (req, res) => {
         core_version: context.core_version
       });
       
-      return res.status(400).json(createErrorResponse('10002', 'Message is required', context));
+      return res.status(400).json(createErrorResponse('10002', 'Message is required'));
     }
     
     // Store transaction trail for ACK
@@ -280,12 +272,12 @@ router.post('/', async (req, res) => {
     console.log(`✅ Update data stored: ${context.transaction_id}/${context.message_id}`);
     
     // Send ACK response
-    return res.status(200).json(createAckResponse(context));
+    return res.status(200).json(createAckResponse());
   } catch (error) {
     console.error('❌ Error processing update request:', error);
     
     // Send error response
-    return res.status(500).json(createErrorResponse('50000', 'Internal server error', req.body?.context || null));
+    return res.status(500).json(createErrorResponse('50000', 'Internal server error'));
   }
 });
 
