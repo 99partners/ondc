@@ -149,6 +149,100 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ----- CONFIRM POST REQUEST (primary for ONDC callbacks) -----
+router.post('/', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const safeContext = ensureSafeContext(payload?.context);
+    const message = payload?.message || {};
+
+    // Store raw confirm data
+    try {
+      const confirmData = new ConfirmData({
+        transaction_id: safeContext.transaction_id || 'unknown',
+        message_id: safeContext.message_id || 'unknown',
+        context: safeContext,
+        message,
+        order: message.order
+      });
+      await confirmData.save();
+      console.log('✅ Confirm POST saved to MongoDB');
+    } catch (storeErr) {
+      console.error('❌ Failed to store confirm POST:', storeErr.message);
+    }
+
+    // Basic validation
+    if (!payload || !payload.context || !payload.message) {
+      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
+      await storeTransactionTrail({
+        transaction_id: safeContext.transaction_id || 'unknown',
+        message_id: safeContext.message_id || 'unknown',
+        action: 'confirm',
+        direction: 'incoming',
+        status: 'NACK',
+        context: safeContext,
+        error: errorResponse.error,
+        timestamp: new Date(),
+        bap_id: safeContext.bap_id,
+        bap_uri: safeContext.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI
+      });
+      return res.status(400).json(errorResponse);
+    }
+
+    // Context validation
+    const contextErrors = validateContext(payload.context);
+    if (contextErrors.length > 0) {
+      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
+      await storeTransactionTrail({
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
+        action: 'confirm',
+        direction: 'incoming',
+        status: 'NACK',
+        context: safeContext,
+        error: errorResponse.error,
+        timestamp: new Date(),
+        bap_id: safeContext.bap_id,
+        bap_uri: safeContext.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI
+      });
+      return res.status(400).json(errorResponse);
+    }
+
+    // Store successful trail
+    await storeTransactionTrail({
+      transaction_id: safeContext.transaction_id,
+      message_id: safeContext.message_id,
+      action: 'confirm',
+      direction: 'incoming',
+      status: 'ACK',
+      context: safeContext,
+      message,
+      timestamp: new Date(),
+      bap_id: safeContext.bap_id,
+      bap_uri: safeContext.bap_uri,
+      bpp_id: safeContext.bpp_id || BPP_ID,
+      bpp_uri: safeContext.bpp_uri || BPP_URI,
+      domain: safeContext.domain,
+      country: safeContext.country,
+      city: safeContext.city,
+      core_version: safeContext.core_version
+    });
+
+    // ACK
+    const ackResponse = createAckResponse();
+    console.log('✅ ACK sent for confirm POST');
+    return res.status(202).json(ackResponse);
+  } catch (error) {
+    console.error('❌ Error in POST /confirm:', error);
+    const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`);
+    return res.status(500).json(errorResponse);
+  }
+});
+
 // ----- DEBUG ROUTE -----
 router.get('/debug', async (req, res) => {
   try {
