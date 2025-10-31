@@ -314,6 +314,9 @@ router.get('/debug', async (req, res) => {
       confirm_requests: confirmRequests.map(req => ({
         transaction_id: req.transaction_id,
         message_id: req.message_id,
+        context: req.context,
+        message: req.message,
+        order: req.order,
         billing_matched: req.billing_matched,
         init_billing_created_at: req.init_billing_created_at,
         confirm_billing_created_at: req.confirm_billing_created_at,
@@ -326,7 +329,7 @@ router.get('/debug', async (req, res) => {
   }
 });
 
-// Endpoint to check init data for a specific transaction
+// Endpoint to check confirm data for a specific transaction
 router.get('/debug/:transaction_id', async (req, res) => {
   try {
     const { transaction_id } = req.params;
@@ -336,6 +339,9 @@ router.get('/debug/:transaction_id', async (req, res) => {
       transaction_id,
       confirm_attempts: confirmData.map(item => ({
         message_id: item.message_id,
+        context: item.context,
+        message: item.message,
+        order: item.order,
         billing_matched: item.billing_matched,
         init_billing_created_at: item.init_billing_created_at,
         confirm_billing_created_at: item.confirm_billing_created_at,
