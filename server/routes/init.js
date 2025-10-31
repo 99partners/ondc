@@ -181,10 +181,10 @@ router.post('/', async (req, res) => {
       console.error('❌ Failed to store transaction trail:', trailError.message);
     }
 
-    // Send ACK response
-    const ackResponse = createAckResponse();
+    // Send ACK response with echoed context (align with search/select)
+    const ackWithContext = { ...createAckResponse(), context: safeContext };
     console.log('✅ Sending ACK response for init request');
-    res.status(202).json(ackResponse);
+    res.status(202).json(ackWithContext);
     
   } catch (error) {
     console.error('❌ Error in /init:', error);
