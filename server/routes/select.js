@@ -187,10 +187,10 @@ router.post('/', async (req, res) => {
       console.error('❌ Failed to store transaction trail:', trailError.message);
     }
 
-    // Send ACK response
-    const ackResponse = createAckResponse();
+    // Send ACK response with echoed context (to mirror search-style lightweight ack)
+    const ackWithContext = { ...createAckResponse(), context };
     console.log('✅ Sending ACK response for select request');
-    res.status(202).json(ackResponse);
+    res.status(202).json(ackWithContext);
     
   } catch (error) {
     console.error('❌ Error in /select:', error);
