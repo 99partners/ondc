@@ -76,9 +76,9 @@ function validateContext(context) {
   return errors;
 }
 
-function createErrorResponse(errorCode, message) {
+function createErrorResponse(errorCode, message, context = null) {
   const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
-  return {
+  const response = {
     message: { ack: { status: 'NACK' } },
     error: {
       type: error.type,
@@ -86,10 +86,18 @@ function createErrorResponse(errorCode, message) {
       message: error.message
     }
   };
+  
+  // Include context if available
+  if (context) {
+    response.context = context;
+  }
+  
+  return response;
 }
 
-function createAckResponse() {
+function createAckResponse(context) {
   return {
+    context: context,
     message: { ack: { status: 'ACK' } }
   };
 }
@@ -120,7 +128,7 @@ router.post('/', async (req, res) => {
     
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
-      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
+      const errorResponse = createErrorResponse('10001', 'Invalid request structure', payload?.context || null);
       await storeTransactionTrail({
         transaction_id: payload?.context?.transaction_id || 'unknown',
         message_id: payload?.context?.message_id || 'unknown',
@@ -143,7 +151,7 @@ router.post('/', async (req, res) => {
     // Validate context
     const contextErrors = validateContext(context);
     if (contextErrors.length > 0) {
-      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
+      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`, context);
       await storeTransactionTrail({
         transaction_id: context.transaction_id,
         message_id: context.message_id,
@@ -216,13 +224,13 @@ router.post('/', async (req, res) => {
     }
 
     // Send ACK response
-    const ackResponse = createAckResponse();
+    const ackResponse = createAckResponse(context);
     console.log('✅ Sending ACK response for select request');
     res.status(202).json(ackResponse);
     
   } catch (error) {
     console.error('❌ Error in /select:', error);
-    const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`);
+    const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`, req.body?.context || null);
     res.status(500).json(errorResponse);
   }
 });

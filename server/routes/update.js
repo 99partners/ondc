@@ -97,9 +97,9 @@ function validateContext(context) {
   return errors;
 }
 
-function createErrorResponse(errorCode, message) {
+function createErrorResponse(errorCode, message, context = null) {
   const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
-  return {
+  const response = {
     message: { ack: { status: 'NACK' } },
     error: {
       type: error.type,
@@ -107,10 +107,18 @@ function createErrorResponse(errorCode, message) {
       message: error.message
     }
   };
+  
+  // Include context if available
+  if (context) {
+    response.context = context;
+  }
+  
+  return response;
 }
 
-function createAckResponse() {
+function createAckResponse(context) {
   return {
+    context: context,
     message: { ack: { status: 'ACK' } }
   };
 }
@@ -158,7 +166,7 @@ router.post('/', async (req, res) => {
         core_version: context?.core_version
       });
       
-      return res.status(400).json(createErrorResponse('10001', contextErrors.join(', ')));
+      return res.status(400).json(createErrorResponse('10001', contextErrors.join(', '), context));
     }
     
     // Validate message
@@ -185,7 +193,7 @@ router.post('/', async (req, res) => {
         core_version: context.core_version
       });
       
-      return res.status(400).json(createErrorResponse('10002', 'Message is required'));
+      return res.status(400).json(createErrorResponse('10002', 'Message is required', context));
     }
     
     // Store transaction trail for ACK
@@ -272,12 +280,12 @@ router.post('/', async (req, res) => {
     console.log(`✅ Update data stored: ${context.transaction_id}/${context.message_id}`);
     
     // Send ACK response
-    return res.status(200).json(createAckResponse());
+    return res.status(200).json(createAckResponse(context));
   } catch (error) {
     console.error('❌ Error processing update request:', error);
     
     // Send error response
-    return res.status(500).json(createErrorResponse('50000', 'Internal server error'));
+    return res.status(500).json(createErrorResponse('50000', 'Internal server error', req.body?.context || null));
   }
 });
 
