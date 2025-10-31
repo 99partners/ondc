@@ -161,12 +161,13 @@ router.post('/', async (req, res) => {
       const confirmData = new ConfirmData({
         transaction_id: safeContext.transaction_id || 'unknown',
         message_id: safeContext.message_id || 'unknown',
-        context: safeContext,
-        message,
-        order: message.order
+        context: payload.context || {},
+        message: payload.message || {},
+        order: payload.message?.order || {},
+        created_at: new Date()
       });
       await confirmData.save();
-      console.log('✅ Confirm POST saved to MongoDB');
+      console.log(`✅ Confirm data stored: ${safeContext.transaction_id}/${safeContext.message_id}`);
     } catch (storeErr) {
       console.error('❌ Failed to store confirm POST:', storeErr.message);
     }

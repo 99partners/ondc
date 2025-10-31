@@ -67,10 +67,16 @@ router.post('/', async (req, res) => {
     // Store all incoming requests regardless of validation
     try {
       const cancelData = new CancelData({
-        requestBody: payload,
-        timestamp: new Date()
+        transaction_id: safeContext.transaction_id || 'unknown',
+        message_id: safeContext.message_id || 'unknown',
+        context: payload.context || {},
+        message: payload.message || {},
+        order_id: payload.message?.order_id || '',
+        cancellation_reason_id: payload.message?.cancellation_reason_id || '',
+        created_at: new Date()
       });
       await cancelData.save();
+      console.log(`✅ Cancel data stored: ${safeContext.transaction_id}/${safeContext.message_id}`);
     } catch (storeError) {
       console.error('❌ Failed to store incoming cancel request:', storeError.message);
     }

@@ -66,10 +66,15 @@ router.post('/', async (req, res) => {
     // Store all incoming requests regardless of validation
     try {
       const statusData = new StatusData({
-        requestBody: payload,
-        timestamp: new Date()
+        transaction_id: safeContext.transaction_id || 'unknown',
+        message_id: safeContext.message_id || 'unknown',
+        context: payload.context || {},
+        message: payload.message || {},
+        order_id: payload.message?.order_id || '',
+        created_at: new Date()
       });
       await statusData.save();
+      console.log(`✅ Status data stored: ${safeContext.transaction_id}/${safeContext.message_id}`);
     } catch (storeError) {
       console.error('❌ Failed to store incoming status request:', storeError.message);
     }
