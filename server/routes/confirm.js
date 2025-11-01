@@ -297,16 +297,6 @@ const mongoose = require('mongoose');
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
 
-// Import InitData model to access init request data
-const InitDataSchema = new mongoose.Schema({
-  transaction_id: { type: String, required: true, index: true },
-  message_id: { type: String, required: true, index: true },
-  context: { type: Object, required: true },
-  message: { type: Object, required: true },
-  order: { type: Object },
-  created_at: { type: Date, default: Date.now }
-});
-
 // ONDC Error Codes
 const ONDC_ERRORS = {
   '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
@@ -347,6 +337,15 @@ const ConfirmDataSchema = new mongoose.Schema({
   billing_matched: { type: Boolean, default: false },
   init_billing_created_at: { type: String },
   confirm_billing_created_at: { type: String },
+  created_at: { type: Date, default: Date.now }
+});
+
+const InitDataSchema = new mongoose.Schema({
+  transaction_id: { type: String, required: true, index: true },
+  message_id: { type: String, required: true, index: true },
+  context: { type: Object, required: true },
+  message: { type: Object, required: true },
+  order: { type: Object },
   created_at: { type: Date, default: Date.now }
 });
 
