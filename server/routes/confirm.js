@@ -120,6 +120,7 @@ router.post('/', async (req, res) => {
     console.log('BAP ID:', payload?.context?.bap_id);
     console.log('Domain:', payload?.context?.domain);
     console.log('Action:', payload?.context?.action);
+    console.log('Full Request Payload:', JSON.stringify(payload, null, 2));
     console.log('================================');
     
     // Validate payload structure
