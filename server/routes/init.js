@@ -44,7 +44,52 @@ const InitDataSchema = new mongoose.Schema({
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const InitData = mongoose.models.InitData || mongoose.model('InitData', InitDataSchema);
 
+<<<<<<< HEAD
 // Utility functions are imported from ../utils/contextValidator
+=======
+// Utility Functions
+function validateContext(context) {
+  const errors = [];
+  
+  if (!context) {
+    errors.push('Context is required');
+    return errors;
+  }
+  
+  // --- ONDC Mandatory Context Fields for BAP -> BPP Request (as per V1.2.0) ---
+  if (!context.domain) errors.push('domain is required');
+  if (!context.country) errors.push('country is required');
+  if (!context.city) errors.push('city is required');
+  if (!context.action) errors.push('action is required');
+  if (!context.core_version) errors.push('core_version is required');
+  if (!context.bap_id) errors.push('bap_id is required');
+  if (!context.bap_uri) errors.push('bap_uri is required');
+  if (!context.transaction_id) errors.push('transaction_id is required');
+  if (!context.message_id) errors.push('message_id is required');
+  if (!context.timestamp) errors.push('timestamp is required');
+  if (!context.ttl) errors.push('ttl is required');
+  
+  return errors;
+}
+
+function createErrorResponse(errorCode, message) {
+  const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
+  return {
+    message: { ack: { status: 'NACK' } },
+    error: {
+      type: error.type,
+      code: error.code,
+      message: error.message
+    }
+  };
+}
+
+function createAckResponse() {
+  return {
+    message: { ack: { status: 'ACK' } }
+  };
+}
+>>>>>>> parent of 85d7da9 (response context now updated)
 
 // Store transaction trail
 async function storeTransactionTrail(data) {
@@ -181,8 +226,13 @@ router.post('/', async (req, res) => {
       console.error('❌ Failed to store transaction trail:', trailError.message);
     }
 
+<<<<<<< HEAD
     // Send ACK response with echoed context (align with search/select)
     const ackWithContext = { ...createAckResponse(), context: safeContext };
+=======
+    // Send ACK response
+    const ackResponse = createAckResponse();
+>>>>>>> parent of 85d7da9 (response context now updated)
     console.log('✅ Sending ACK response for init request');
     res.status(202).json(ackWithContext);
     

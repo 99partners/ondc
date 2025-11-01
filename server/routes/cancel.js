@@ -45,7 +45,54 @@ const CancelDataSchema = new mongoose.Schema({
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const CancelData = mongoose.models.CancelData || mongoose.model('CancelData', CancelDataSchema);
 
+<<<<<<< HEAD
 // Utility functions are imported from ../utils/contextValidator
+=======
+// Utility Functions
+function validateContext(context) {
+  const errors = [];
+  
+  if (!context) {
+    errors.push('Context is required');
+    return errors;
+  }
+  
+  // --- ONDC Mandatory Context Fields for BAP -> BPP Request (as per V1.2.0) ---
+  if (!context.domain) errors.push('domain is required');
+  if (!context.country) errors.push('country is required');
+  if (!context.city) errors.push('city is required');
+  if (!context.action) errors.push('action is required');
+  if (!context.core_version) errors.push('core_version is required');
+  if (!context.bap_id) errors.push('bap_id is required');
+  if (!context.bap_uri) errors.push('bap_uri is required');
+  if (!context.bpp_id) errors.push('bpp_id is required');
+  if (!context.bpp_uri) errors.push('bpp_uri is required');
+  if (!context.transaction_id) errors.push('transaction_id is required');
+  if (!context.message_id) errors.push('message_id is required');
+  if (!context.timestamp) errors.push('timestamp is required');
+  if (!context.ttl) errors.push('ttl is required');
+  
+  return errors;
+}
+
+function createErrorResponse(errorCode, message) {
+  const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
+  return {
+    message: { ack: { status: 'NACK' } },
+    error: {
+      type: error.type,
+      code: error.code,
+      message: error.message
+    }
+  };
+}
+
+function createAckResponse() {
+  return {
+    message: { ack: { status: 'ACK' } }
+  };
+}
+>>>>>>> parent of 85d7da9 (response context now updated)
 
 // Store transaction trail
 async function storeTransactionTrail(data) {
@@ -67,7 +114,85 @@ router.post('/', async (req, res) => {
     // Create a safe context object with default values for missing properties
     const safeContext = ensureSafeContext(payload?.context);
     
+<<<<<<< HEAD
     // Store all incoming requests regardless of validation
+=======
+    // Validate payload structure
+    if (!payload || !payload.context || !payload.message) {
+      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
+      await storeTransactionTrail({
+        transaction_id: payload?.context?.transaction_id || 'unknown',
+        message_id: payload?.context?.message_id || 'unknown',
+        action: 'cancel',
+        direction: 'incoming',
+        status: 'NACK',
+        context: payload?.context || {},
+        error: errorResponse.error,
+        timestamp: new Date(),
+        bap_id: payload?.context?.bap_id,
+        bap_uri: payload?.context?.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI
+      });
+      return res.status(400).json(errorResponse);
+    }
+
+    const { context, message } = payload;
+    
+    // Validate context
+    const contextErrors = validateContext(context);
+    if (contextErrors.length > 0) {
+      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
+      await storeTransactionTrail({
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        action: 'cancel',
+        direction: 'incoming',
+        status: 'NACK',
+        context,
+        error: errorResponse.error,
+        timestamp: new Date(),
+        bap_id: context.bap_id,
+        bap_uri: context.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI
+      });
+      return res.status(400).json(errorResponse);
+    }
+
+    // Store cancel data in MongoDB Atlas with retry mechanism
+    let retries = 0;
+    const maxRetries = 3;
+    
+    while (retries < maxRetries) {
+      try {
+        const cancelData = new CancelData({
+          transaction_id: context.transaction_id,
+          message_id: context.message_id,
+          context,
+          message,
+          order_id: message.order_id,
+          cancellation_reason_id: message.cancellation_reason_id
+        });
+        await cancelData.save();
+        console.log('✅ Cancel data saved to MongoDB Atlas database');
+        console.log('📊 Saved cancel request for transaction:', context.transaction_id);
+        break; // Exit the loop if successful
+      } catch (dbError) {
+        retries++;
+        console.error(`❌ Failed to save cancel data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
+        
+        if (retries >= maxRetries) {
+          console.error('❌ Max retries reached. Could not save cancel data.');
+        } else {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+    }
+
+    // Store transaction trail in MongoDB Atlas - MANDATORY for audit
+>>>>>>> parent of 85d7da9 (response context now updated)
     try {
       const cancelData = new CancelData({
         transaction_id: safeContext.transaction_id || 'unknown',
@@ -134,6 +259,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json(errorResponse);
     }
 
+<<<<<<< HEAD
     // Validate message
     if (!message || !message.order_id) {
       const errorResponse = createErrorResponse('10002', 'Message is invalid or missing required fields');
@@ -182,6 +308,10 @@ router.post('/', async (req, res) => {
       core_version: safeContext.core_version
     });
     
+=======
+    // Send ACK response
+    const ackResponse = createAckResponse();
+>>>>>>> parent of 85d7da9 (response context now updated)
     console.log('✅ Sending ACK response for cancel request');
     res.status(202).json(ackResponse);
     
