@@ -7,8 +7,6 @@ const { validateContext, ensureSafeContext, createErrorResponse, createAckRespon
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
 
-// Using shared validators from ../utils/contextValidator
-
 // Import models - These should be moved to separate model files in a production environment
 const TransactionTrailSchema = new mongoose.Schema({
   transaction_id: { type: String, required: true, index: true },
