@@ -123,6 +123,29 @@ router.post('/', async (req, res) => {
     console.log('Full Request Payload:', JSON.stringify(payload, null, 2));
     console.log('================================');
     
+    // Store confirm data in MongoDB Atlas immediately for all requests
+    try {
+      // Create a deep copy of the payload to avoid reference issues
+      const rawPayload = JSON.parse(JSON.stringify(req.body || {}));
+      
+      const confirmData = new ConfirmData({
+        transaction_id: payload?.context?.transaction_id || 'unknown',
+        message_id: payload?.context?.message_id || 'unknown',
+        context: payload?.context || {},
+        message: payload?.message || {},
+        order: payload?.message?.order || {},
+        raw_payload: rawPayload,
+        created_at: new Date()
+      });
+      
+      await confirmData.save();
+      console.log('✅ Confirm data saved to MongoDB Atlas database');
+      console.log('📊 Saved confirm request for transaction:', payload?.context?.transaction_id || 'unknown');
+    } catch (dbError) {
+      console.error('❌ Failed to save confirm data to MongoDB Atlas:', dbError.message);
+      // Continue execution but log the error
+    }
+    
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
       const errorResponse = createErrorResponse('10001', 'Invalid request structure');
@@ -166,25 +189,6 @@ router.post('/', async (req, res) => {
         bpp_uri: BPP_URI
       });
       return res.status(400).json(errorResponse);
-    }
-
-    // Store confirm data in MongoDB Atlas
-    try {
-      const confirmData = new ConfirmData({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        context,
-        message,
-        order: message.order,
-        raw_payload: req.body || {}, // Store the raw incoming request payload
-        created_at: new Date()
-      });
-      await confirmData.save();
-      console.log('✅ Confirm data saved to MongoDB Atlas database');
-      console.log('📊 Saved confirm request for transaction:', context.transaction_id);
-    } catch (dbError) {
-      console.error('❌ Failed to save confirm data to MongoDB Atlas:', dbError.message);
-      // Continue execution but log the error
     }
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit
@@ -289,6 +293,39 @@ router.get('/debug/:transaction_id', async (req, res) => {
     
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Debug endpoint to view stored confirm requests
+router.get('/debug', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const filters = {};
+    
+    // Apply filters if provided
+    if (req.query.transaction_id) filters.transaction_id = req.query.transaction_id;
+    if (req.query.message_id) filters.message_id = req.query.message_id;
+    if (req.query.bap_id) filters['context.bap_id'] = req.query.bap_id;
+    
+    // Count total documents in the collection
+    const totalInDb = await ConfirmData.countDocuments({});
+    
+    // Get the filtered confirm data
+    const confirmData = await ConfirmData.find(filters)
+      .sort({ created_at: -1 })
+      .limit(limit);
+    
+    // Return the data with metadata
+    res.json({
+      total_in_db: totalInDb,
+      filters_applied: Object.keys(filters).length > 0 ? filters : 'none',
+      limit,
+      count: confirmData.length,
+      data: confirmData
+    });
+  } catch (error) {
+    console.error('Error fetching confirm debug data:', error);
+    res.status(500).json({ error: 'Failed to fetch confirm data', message: error.message });
   }
 });
 
