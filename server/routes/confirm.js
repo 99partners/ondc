@@ -268,8 +268,8 @@ router.get('/debug', async (req, res) => {
     });
     
     res.json({
-      count: confirmRequests.length,
-      requests: safeRequests
+      confirm_count: confirmRequests.length,
+      confirm_requests: safeRequests
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
