@@ -7,10 +7,8 @@ const path = require('path');
 
 // Import route files
 const searchRoutes = require('./routes/search');
-const searchPramaanRoutes = require('./routes/search-pramaan');
 const selectRoutes = require('./routes/select');
 const initRoutes = require('./routes/init');
-const onConfirmRoutes = require('./routes/on_confirm');
 const updateRoutes = require('./routes/update');
 const statusRoutes = require('./routes/status');
 const cancelRoutes = require('./routes/cancel');
@@ -54,12 +52,9 @@ app.get('/', (req, res) => {
 });
  // adjust path if needed
 app.use('/confirm', confirmRouter);
-// Use route files
 app.use('/search', searchRoutes); // Standard search endpoint
-app.use('/search', searchPramaanRoutes); // Pramaan mock search endpoint
 app.use('/select', selectRoutes);
 app.use('/init', initRoutes);
-app.use('/on_confirm', onConfirmRoutes);
 app.use('/update', updateRoutes);
 app.use('/status', statusRoutes);
 app.use('/cancel', cancelRoutes);
