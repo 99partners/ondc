@@ -344,6 +344,7 @@ const ConfirmDataSchema = new mongoose.Schema({
   context: { type: Object, required: true },
   message: { type: Object, required: true },
   order: { type: Object },
+  raw_payload: { type: Object }, // Store the complete raw request
   billing_matched: { type: Boolean, default: false },
   init_billing_created_at: { type: String },
   confirm_billing_created_at: { type: String },
@@ -422,9 +423,29 @@ async function storeTransactionTrail(data) {
 
 // /confirm API - Buyer app sends confirm request
 router.post('/', async (req, res) => {
+  // Store raw request immediately at the beginning
+  const payload = req.body || {};
+  
+  // Store ALL incoming requests immediately before any processing
   try {
-    const payload = req.body;
+    const confirmData = new ConfirmData({
+      transaction_id: payload?.context?.transaction_id || 'unknown',
+      message_id: payload?.context?.message_id || 'unknown',
+      context: payload?.context || {},
+      message: payload?.message || {},
+      order: payload?.message?.order || {},
+      raw_payload: payload, // Store the complete raw request
+      created_at: new Date()
+    });
     
+    // Force save without waiting for validation
+    await confirmData.save({ validateBeforeSave: false });
+    console.log('✅ CONFIRM DATA SAVED TO DATABASE');
+  } catch (dbError) {
+    console.error('❌ DATABASE SAVE ERROR:', dbError.message);
+  }
+  
+  try {
     console.log('=== INCOMING CONFIRM REQUEST ===');
     console.log('Transaction ID:', payload?.context?.transaction_id);
     console.log('Message ID:', payload?.context?.message_id);
