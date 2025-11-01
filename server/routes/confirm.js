@@ -112,7 +112,8 @@ async function storeTransactionTrail(data) {
 // /confirm API - Buyer app sends confirm request
 router.post('/', async (req, res) => {
   try {
-    const payload = req.body;
+    // Safely extract payload with defaults if req.body is undefined
+    const payload = req.body || {};
     
     console.log('=== INCOMING CONFIRM REQUEST ===');
     console.log('Transaction ID:', payload?.context?.transaction_id);
@@ -123,10 +124,10 @@ router.post('/', async (req, res) => {
     console.log('Full Request Payload:', JSON.stringify(payload, null, 2));
     console.log('================================');
     
-    // Store confirm data in MongoDB Atlas immediately for all requests
+    // Store ALL incoming requests immediately regardless of validation
     try {
       // Create a deep copy of the payload to avoid reference issues
-      const rawPayload = JSON.parse(JSON.stringify(req.body || {}));
+      const rawPayload = JSON.parse(JSON.stringify(payload));
       
       const confirmData = new ConfirmData({
         transaction_id: payload?.context?.transaction_id || 'unknown',
@@ -134,10 +135,11 @@ router.post('/', async (req, res) => {
         context: payload?.context || {},
         message: payload?.message || {},
         order: payload?.message?.order || {},
-        raw_payload: rawPayload,
+        raw_payload: rawPayload, // Store the complete raw request
         created_at: new Date()
       });
       
+      // Use await to ensure the data is saved before proceeding
       await confirmData.save();
       console.log('✅ Confirm data saved to MongoDB Atlas database');
       console.log('📊 Saved confirm request for transaction:', payload?.context?.transaction_id || 'unknown');
