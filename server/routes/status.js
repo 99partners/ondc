@@ -63,6 +63,10 @@ router.post('/', async (req, res) => {
     // Safely extract payload with defaults if req.body is undefined
     const payload = req.body || {};
     
+    // Create a safe context object with default values for missing properties
+    const safeContext = ensureSafeContext(payload?.context);
+    const { context = safeContext, message = payload.message || {} } = payload;
+    
     // Store all incoming requests regardless of validation
     try {
       const statusData = new StatusData({
@@ -78,10 +82,6 @@ router.post('/', async (req, res) => {
     } catch (storeError) {
       console.error('❌ Failed to store incoming status request:', storeError.message);
     }
-    
-    // Create a safe context object with default values for missing properties
-    const safeContext = ensureSafeContext(payload?.context);
-    const { context = safeContext, message = payload.message || {} } = payload;
     
     // Basic validation
     if (!payload || !payload.context || !payload.message) {
@@ -186,8 +186,28 @@ router.post('/', async (req, res) => {
       console.error('❌ Failed to store transaction trail:', trailError.message);
     }
 
-    // Send ACK response
-    const ackResponse = createAckResponse();
+    // Send ACK response with proper context
+    const ackResponse = {
+      context: {
+        domain: context.domain,
+        country: context.country,
+        city: context.city,
+        action: context.action,
+        core_version: context.core_version,
+        bap_id: context.bap_id,
+        bap_uri: context.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI,
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        timestamp: new Date().toISOString()
+      },
+      message: {
+        ack: {
+          status: "ACK"
+        }
+      }
+    };
     console.log('✅ Sending ACK response for status request');
     res.status(202).json(ackResponse);
     

@@ -50,6 +50,7 @@ const ConfirmDataSchema = new mongoose.Schema({
   context: { type: Object, required: true },
   message: { type: Object, required: true },
   order: { type: Object },
+  raw_payload: { type: Object }, // Store the full raw payload
   billing_matched: { type: Boolean, default: false },
   init_billing_created_at: { type: String },
   confirm_billing_created_at: { type: String },
@@ -217,6 +218,7 @@ router.post('/', async (req, res) => {
         context: req.body?.context,
         message: req.body?.message,
         order: safeMessage.order,
+        raw_payload: req.body, // Store the full raw payload
         billing_matched: billingMatched,
         init_billing_created_at: initBillingCreatedAt,
         confirm_billing_created_at: confirmBillingCreatedAt,
@@ -235,6 +237,7 @@ router.post('/', async (req, res) => {
           context: req.body?.context,
           message: req.body?.message,
           order: safeMessage.order,
+          raw_payload: req.body, // Store the full raw payload
           billing_matched: billingMatched,
           init_billing_created_at: initBillingCreatedAt,
           confirm_billing_created_at: confirmBillingCreatedAt,
@@ -288,24 +291,24 @@ router.post('/', async (req, res) => {
 router.get('/debug', async (req, res) => {
   try {
     const confirmRequests = await ConfirmData.find().sort({ created_at: -1 }).limit(50);
-    const initRequests = await InitData.find().sort({ created_at: -1 }).limit(50);
+    
+    // Count total confirm requests
+    const confirmCount = await ConfirmData.countDocuments();
     
     res.json({
-      confirm_count: confirmRequests.length,
-      init_count: initRequests.length,
+      confirm_count: confirmCount,
       confirm_requests: confirmRequests.map(req => ({
         transaction_id: req.transaction_id,
         message_id: req.message_id,
         billing_matched: req.billing_matched,
         init_billing_created_at: req.init_billing_created_at,
         confirm_billing_created_at: req.confirm_billing_created_at,
-        created_at: req.created_at
-      })),
-      init_requests: initRequests.map(req => ({
-        transaction_id: req.transaction_id,
-        message_id: req.message_id,
-        billing_created_at: req.message?.order?.billing?.created_at,
-        created_at: req.created_at
+        created_at: req.created_at,
+        // Include the full raw payload
+        raw_payload: req.raw_payload || {
+          context: req.context,
+          message: req.message
+        }
       }))
     });
     
@@ -314,26 +317,25 @@ router.get('/debug', async (req, res) => {
   }
 });
 
-// Endpoint to check init data for a specific transaction
+// Endpoint to check confirm data for a specific transaction
 router.get('/debug/:transaction_id', async (req, res) => {
   try {
     const { transaction_id } = req.params;
-    const initData = await getInitDataForTransaction(transaction_id);
     const confirmData = await ConfirmData.find({ transaction_id }).sort({ created_at: -1 });
     
     res.json({
       transaction_id,
-      init_data: initData ? {
-        message_id: initData.message_id,
-        billing: initData.message?.order?.billing,
-        created_at: initData.created_at
-      } : null,
       confirm_attempts: confirmData.map(item => ({
         message_id: item.message_id,
         billing_matched: item.billing_matched,
         init_billing_created_at: item.init_billing_created_at,
         confirm_billing_created_at: item.confirm_billing_created_at,
-        created_at: item.created_at
+        created_at: item.created_at,
+        // Include the full raw payload
+        raw_payload: item.raw_payload || {
+          context: item.context,
+          message: item.message
+        }
       }))
     });
     
