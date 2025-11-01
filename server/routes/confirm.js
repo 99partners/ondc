@@ -181,7 +181,6 @@ router.post('/', async (req, res) => {
       await confirmData.save();
       console.log('✅ Confirm data saved to MongoDB Atlas database');
       console.log('📊 Saved confirm request for transaction:', context.transaction_id);
-      console.log('💳 Billing matched:', billingMatched);
     } catch (dbError) {
       console.error('❌ Failed to save confirm data to MongoDB Atlas:', dbError.message);
       // Continue execution but log the error
@@ -214,7 +213,6 @@ router.post('/', async (req, res) => {
     // Send ACK response
     const ackResponse = createAckResponse();
     console.log('✅ Sending ACK response for confirm request');
-    console.log('🎯 Billing timestamp handling:', billingMatched ? 'MATCHED' : 'NOT MATCHED');
     res.status(202).json(ackResponse);
     
   } catch (error) {
@@ -259,9 +257,6 @@ router.get('/debug', async (req, res) => {
         message: req.message,
         order: req.order,
         raw_payload: req.raw_payload,
-        billing_matched: req.billing_matched,
-        init_billing_created_at: req.init_billing_created_at,
-        confirm_billing_created_at: req.confirm_billing_created_at,
         created_at: req.created_at
       }))
     });
@@ -286,7 +281,7 @@ router.get('/debug/:transaction_id', async (req, res) => {
         message: item.message,
         order: item.order,
         raw_payload: item.raw_payload,
-        billing_matched: item.billing_matched,
+
         created_at: item.created_at
       }))
     });
