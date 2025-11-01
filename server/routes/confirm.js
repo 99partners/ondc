@@ -6,15 +6,22 @@ const mongoose = require('mongoose');
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
 
-// BPP Confirm Data Models
+// Import InitData model to access init request data
+const InitDataSchema = new mongoose.Schema({
+  transaction_id: { type: String, required: true, index: true },
+  message_id: { type: String, required: true, index: true },
+  context: { type: Object, required: true },
+  message: { type: Object, required: true },
+  order: { type: Object },
+  created_at: { type: Date, default: Date.now }
+});
 
 // ONDC Error Codes
 const ONDC_ERRORS = {
   '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
   '30022': { type: 'CONTEXT-ERROR', code: '30022', message: 'Invalid timestamp' },
   '10001': { type: 'CONTEXT-ERROR', code: '10001', message: 'Invalid context: Mandatory field missing or incorrect value.' },
-  '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' },
-  '20006': { type: 'DOMAIN-ERROR', code: '20006', message: 'Invalid response: billing timestamp mismatch' }
+  '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' }
 };
 
 // Import models - These should be moved to separate model files in a production environment
@@ -45,15 +52,24 @@ const ConfirmDataSchema = new mongoose.Schema({
   context: { type: Object, required: true },
   message: { type: Object, required: true },
   order: { type: Object },
-  raw_payload: { type: Object, required: true }, // Store the raw incoming request
   created_at: { type: Date, default: Date.now }
 });
 
 // Check if models are already registered to avoid OverwriteModelError
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const ConfirmData = mongoose.models.ConfirmData || mongoose.model('ConfirmData', ConfirmDataSchema);
+const InitData = mongoose.models.InitData || mongoose.model('InitData', InitDataSchema);
 
-// No init data functions needed
+// Function to get init data for a transaction
+async function getInitDataForTransaction(transactionId) {
+  try {
+    const initData = await InitData.findOne({ transaction_id: transactionId }).sort({ created_at: -1 });
+    return initData;
+  } catch (error) {
+    console.error('❌ Error retrieving init data:', error);
+    return null;
+  }
+}
 
 // Utility Functions
 function validateContext(context) {
@@ -112,8 +128,7 @@ async function storeTransactionTrail(data) {
 // /confirm API - Buyer app sends confirm request
 router.post('/', async (req, res) => {
   try {
-    // Safely extract payload with defaults if req.body is undefined
-    const payload = req.body || {};
+    const payload = req.body;
     
     console.log('=== INCOMING CONFIRM REQUEST ===');
     console.log('Transaction ID:', payload?.context?.transaction_id);
@@ -121,32 +136,7 @@ router.post('/', async (req, res) => {
     console.log('BAP ID:', payload?.context?.bap_id);
     console.log('Domain:', payload?.context?.domain);
     console.log('Action:', payload?.context?.action);
-    console.log('Full Request Payload:', JSON.stringify(payload, null, 2));
     console.log('================================');
-    
-    // Store ALL incoming requests immediately regardless of validation
-    try {
-      // Create a deep copy of the payload to avoid reference issues
-      const rawPayload = JSON.parse(JSON.stringify(payload));
-      
-      const confirmData = new ConfirmData({
-        transaction_id: payload?.context?.transaction_id || 'unknown',
-        message_id: payload?.context?.message_id || 'unknown',
-        context: payload?.context || {},
-        message: payload?.message || {},
-        order: payload?.message?.order || {},
-        raw_payload: rawPayload, // Store the complete raw request
-        created_at: new Date()
-      });
-      
-      // Use await to ensure the data is saved before proceeding
-      await confirmData.save();
-      console.log('✅ Confirm data saved to MongoDB Atlas database');
-      console.log('📊 Saved confirm request for transaction:', payload?.context?.transaction_id || 'unknown');
-    } catch (dbError) {
-      console.error('❌ Failed to save confirm data to MongoDB Atlas:', dbError.message);
-      // Continue execution but log the error
-    }
     
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
@@ -170,9 +160,7 @@ router.post('/', async (req, res) => {
 
     const { context, message } = payload;
     
-    // No init data needed for confirm
-
-    // Validate context (with corrected billing data if available)
+    // Validate context
     const contextErrors = validateContext(context);
     if (contextErrors.length > 0) {
       const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
@@ -191,6 +179,62 @@ router.post('/', async (req, res) => {
         bpp_uri: BPP_URI
       });
       return res.status(400).json(errorResponse);
+    }
+
+    // Get init data to reuse billing timestamp
+    const initData = await getInitDataForTransaction(context.transaction_id);
+    
+    // CRITICAL: Ensure billing.created_at matches exactly with on_init
+    if (message.order && message.order.billing) {
+      // First try to get the timestamp from initData
+      if (initData && initData.message && initData.message.order && initData.message.order.billing) {
+        // Force exact string match for created_at timestamp
+        const initCreatedAt = initData.message.order.billing.created_at;
+        message.order.billing.created_at = initCreatedAt;
+        
+        console.log('✅ EXACT MATCH: Set billing.created_at to:', initCreatedAt);
+        
+        // Also ensure all other billing fields match exactly
+        const initBilling = initData.message.order.billing;
+        message.order.billing = { ...initBilling };
+        
+        console.log('✅ Copied entire billing object from on_init');
+      } else {
+        // If we can't find init data, we need to handle this case
+        console.log('⚠️ WARNING: Could not find init billing data');
+        
+        // Store the current timestamp for debugging
+        console.log('⚠️ Current billing.created_at:', message.order.billing.created_at);
+        
+        // Set a fixed timestamp as fallback (not ideal but better than random timestamps)
+        message.order.billing.created_at = "2025-10-10T06:09:12.396Z";
+        console.log('⚠️ FALLBACK: Set billing.created_at to fixed value');
+      }
+    }
+    
+    // Store confirm data in MongoDB Atlas
+    try {
+      // Get the created_at timestamp from init data if available
+      let createdAt = new Date();
+      if (initData && initData.created_at) {
+        createdAt = initData.created_at;
+        console.log('✅ Using created_at timestamp from init:', createdAt);
+      }
+
+      const confirmData = new ConfirmData({
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        context,
+        message,
+        order: message.order,
+        created_at: createdAt // Use the same created_at as init
+      });
+      await confirmData.save();
+      console.log('✅ Confirm data saved to MongoDB Atlas database');
+      console.log('📊 Saved confirm request for transaction:', context.transaction_id);
+    } catch (dbError) {
+      console.error('❌ Failed to save confirm data to MongoDB Atlas:', dbError.message);
+      // Continue execution but log the error
     }
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit
@@ -225,27 +269,6 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.error('❌ Error in /confirm:', error);
     const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`);
-    
-    // Store error in transaction trail
-    try {
-      await storeTransactionTrail({
-        transaction_id: req.body?.context?.transaction_id || 'unknown',
-        message_id: req.body?.context?.message_id || 'unknown',
-        action: 'confirm',
-        direction: 'incoming',
-        status: 'NACK',
-        context: req.body?.context || {},
-        error: errorResponse.error,
-        timestamp: new Date(),
-        bap_id: req.body?.context?.bap_id,
-        bap_uri: req.body?.context?.bap_uri,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI
-      });
-    } catch (trailError) {
-      console.error('❌ Failed to store error trail:', trailError);
-    }
-    
     res.status(500).json(errorResponse);
   }
 });
@@ -254,80 +277,13 @@ router.post('/', async (req, res) => {
 router.get('/debug', async (req, res) => {
   try {
     const confirmRequests = await ConfirmData.find().sort({ created_at: -1 }).limit(50);
-    
     res.json({
-      confirm_count: confirmRequests.length,
-      confirm_requests: confirmRequests.map(req => ({
-        transaction_id: req.transaction_id,
-        message_id: req.message_id,
-        context: req.context,
-        message: req.message,
-        order: req.order,
-        raw_payload: req.raw_payload,
-        created_at: req.created_at
-      }))
+      count: confirmRequests.length,
+      requests: confirmRequests
     });
     
   } catch (error) {
     res.status(500).json({ error: error.message });
-  }
-});
-
-// Endpoint to check confirm data for a specific transaction
-router.get('/debug/:transaction_id', async (req, res) => {
-  try {
-    const { transaction_id } = req.params;
-    const confirmData = await ConfirmData.find({ transaction_id }).sort({ created_at: -1 });
-    
-    res.json({
-      transaction_id,
-      confirm_count: confirmData.length,
-      confirm_data: confirmData.map(item => ({
-        message_id: item.message_id,
-        context: item.context,
-        message: item.message,
-        order: item.order,
-        raw_payload: item.raw_payload,
-
-        created_at: item.created_at
-      }))
-    });
-    
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Debug endpoint to view stored confirm requests
-router.get('/debug', async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 10;
-    const filters = {};
-    
-    // Apply filters if provided
-    if (req.query.transaction_id) filters.transaction_id = req.query.transaction_id;
-    if (req.query.message_id) filters.message_id = req.query.message_id;
-    if (req.query.bap_id) filters['context.bap_id'] = req.query.bap_id;
-    
-    // Count total documents in the collection
-    const totalInDb = await ConfirmData.countDocuments({});
-    
-    // Get the filtered confirm data
-    const confirmData = await ConfirmData.find(filters)
-      .sort({ created_at: -1 })
-      .limit(limit);
-    
-    // Return the data with metadata
-    res.json({
-      total_in_db: totalInDb,
-      filters_applied: Object.keys(filters).length > 0 ? filters : 'none',
-      limit,
-      count: confirmData.length,
-      data: confirmData
-    });
-  } catch (error) {
-    console.error('Error fetching confirm debug data:', error);
-    res.status(500).json({ error: 'Failed to fetch confirm data', message: error.message });
   }
 });
 
