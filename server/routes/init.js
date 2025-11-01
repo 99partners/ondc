@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
 const { validateContext, ensureSafeContext, createErrorResponse, createAckResponse } = require('../utils/contextValidator');
 
 // BPP Configuration - These should be moved to a config file in a production environment
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
+
+// Using shared validators from ../utils/contextValidator
 
 // Import models - These should be moved to separate model files in a production environment
 const TransactionTrailSchema = new mongoose.Schema({
@@ -54,173 +54,6 @@ async function storeTransactionTrail(data) {
     console.log(`✅ Transaction trail stored: ${data.transaction_id}/${data.message_id} - ${data.action} - ${data.status}`);
   } catch (error) {
     console.error('❌ Failed to store transaction trail:', error);
-  }
-}
-
-// Function to calculate quote details from order
-function calculateQuote(order) {
-  if (!order || !order.items) {
-    return null;
-  }
-
-  // Calculate totals and item details
-  let totalValue = 0;
-  const breakup = order.items.map(item => {
-    const price = item.price ? parseFloat(item.price.value) : 0;
-    const quantity = item.quantity?.count || 1;
-    const itemTotal = price * quantity;
-    totalValue += itemTotal;
-    
-    return {
-      "@ondc/org/item_id": item.id,
-      "@ondc/org/item_quantity": {
-        count: quantity
-      },
-      "@ondc/org/title_type": "ITEM",
-      price: {
-        currency: item.price?.currency || "INR",
-        value: itemTotal.toString()
-      },
-      "@ondc/org/item_details": item
-    };
-  });
-
-  return {
-    price: {
-      currency: "INR",
-      value: totalValue.toString(),
-      breakup: breakup
-    },
-    "@ondc/org/quote_ttl": "2025-12-31T23:59:59.000Z"
-  };
-}
-
-// Function to send on_init callback to BAP
-async function sendOnInitCallback(context, order) {
-  try {
-    // Generate new message_id for on_init
-    const onInitMessageId = uuidv4();
-    
-    // Create on_init context
-    const onInitContext = {
-      domain: context.domain,
-      country: context.country,
-      city: context.city,
-      action: "on_init",
-      core_version: context.core_version,
-      bap_id: context.bap_id,
-      bap_uri: context.bap_uri,
-      bpp_id: BPP_ID,
-      bpp_uri: BPP_URI,
-      transaction_id: context.transaction_id,
-      message_id: onInitMessageId,
-      timestamp: new Date().toISOString(),
-      ttl: "PT30S"
-    };
-
-    // Calculate quote
-    const quote = calculateQuote(order);
-    
-    // Create on_init message
-    const onInitMessage = {
-      order: {
-        provider: order.provider,
-        items: order.items,
-        billing: order.billing,
-        fulfillments: order.fulfillments,
-        payment: order.payment || {
-          "@ondc/org/buyer_app_finder_fee_type": "percent",
-          "@ondc/org/buyer_app_finder_fee_amount": "1"
-        },
-        quote: quote
-      },
-      tags: [
-        {
-          code: "initiation",
-          list: [
-            {
-              code: "type",
-              value: "buyer-initialized"
-            }
-          ]
-        }
-      ]
-    };
-
-    // Construct full on_init payload
-    const onInitPayload = {
-      context: onInitContext,
-      message: onInitMessage
-    };
-
-    console.log('📤 Sending on_init callback to:', context.bap_uri);
-    console.log('🔑 Message ID:', onInitMessageId);
-    
-    // Send POST request to BAP's callback URL
-    const response = await axios.post(context.bap_uri, onInitPayload, {
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000
-    });
-
-    console.log('✅ on_init callback sent successfully. Response status:', response.status);
-    
-    // Store transaction trail for outgoing on_init
-    await storeTransactionTrail({
-      transaction_id: context.transaction_id,
-      message_id: onInitMessageId,
-      action: 'on_init',
-      direction: 'outgoing',
-      status: 'ACK',
-      context: onInitContext,
-      message: onInitMessage,
-      timestamp: new Date(),
-      bap_id: context.bap_id,
-      bap_uri: context.bap_uri,
-      bpp_id: BPP_ID,
-      bpp_uri: BPP_URI,
-      domain: context.domain,
-      country: context.country,
-      city: context.city,
-      core_version: context.core_version
-    });
-
-    return { success: true, messageId: onInitMessageId };
-  } catch (error) {
-    console.error('❌ Failed to send on_init callback:', error.message);
-    console.error('Error details:', error.response?.data || error.message);
-    
-    // Store transaction trail for failed on_init
-    try {
-      await storeTransactionTrail({
-        transaction_id: context.transaction_id,
-        message_id: onInitMessageId || 'unknown',
-        action: 'on_init',
-        direction: 'outgoing',
-        status: 'NACK',
-        context: onInitContext || {},
-        message: onInitMessage || {},
-        error: {
-          type: 'NETWORK-ERROR',
-          code: '50001',
-          message: error.message
-        },
-        timestamp: new Date(),
-        bap_id: context.bap_id,
-        bap_uri: context.bap_uri,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI,
-        domain: context.domain,
-        country: context.country,
-        city: context.city,
-        core_version: context.core_version
-      });
-    } catch (trailError) {
-      console.error('❌ Failed to store on_init trail:', trailError.message);
-    }
-
-    return { success: false, error: error.message };
   }
 }
 
@@ -352,19 +185,6 @@ router.post('/', async (req, res) => {
     const ackWithContext = { ...createAckResponse(), context: safeContext };
     console.log('✅ Sending ACK response for init request');
     res.status(202).json(ackWithContext);
-    
-    // Send on_init callback to BAP asynchronously (don't wait for it)
-    if (message.order) {
-      sendOnInitCallback(safeContext, message.order).then(result => {
-        if (result.success) {
-          console.log('✅ on_init callback completed successfully');
-        } else {
-          console.log('❌ on_init callback failed:', result.error);
-        }
-      }).catch(err => {
-        console.error('❌ on_init callback error:', err.message);
-      });
-    }
     
   } catch (error) {
     console.error('❌ Error in /init:', error);
