@@ -374,6 +374,36 @@ async function storeTransactionTrail(data) {
 
 // /confirm POST route
 router.post('/', async (req, res) => {
+  // IMPORTANT: Store raw request data immediately
+  let rawRequest = null;
+  try {
+    // Store the raw request body as string first
+    rawRequest = JSON.stringify(req.body);
+    console.log('Raw request captured:', rawRequest.substring(0, 100) + '...');
+  } catch (e) {
+    console.error('Error stringifying request:', e);
+    rawRequest = '{"error": "Failed to stringify request"}';
+  }
+  
+  // Store in database immediately before any processing
+  try {
+    const confirmData = new ConfirmData({
+      transaction_id: req.body?.context?.transaction_id || 'unknown',
+      message_id: req.body?.context?.message_id || 'unknown',
+      context: req.body?.context || {},
+      message: req.body?.message || {},
+      order: req.body?.message?.order || {},
+      raw_payload: req.body || {}, // Store the complete raw request
+      created_at: new Date()
+    });
+    
+    // Force save without waiting for validation
+    await confirmData.save({ validateBeforeSave: false });
+    console.log('✅ CONFIRM DATA SAVED TO DATABASE');
+  } catch (dbError) {
+    console.error('❌ DATABASE SAVE ERROR:', dbError);
+  }
+  
   try {
     const payload = req.body || {};
 
@@ -400,21 +430,6 @@ router.post('/', async (req, res) => {
       core_version: payload?.context?.core_version || '',
       timestamp: payload?.context?.timestamp || new Date().toISOString()
     };
-
-    // Always store raw incoming data
-    try {
-      const confirmData = new ConfirmData({
-        transaction_id: safeContext.transaction_id,
-        message_id: safeContext.message_id,
-        context: payload.context || {},
-        message: payload.message || {},
-        order: payload?.message?.order || {},
-      });
-      await confirmData.save();
-      console.log('✅ Raw confirm data saved for audit purposes');
-    } catch (err) {
-      console.error('❌ Failed to save raw confirm data:', err.message);
-    }
 
     // Basic validation
     if (!payload.context || !payload.message) {
