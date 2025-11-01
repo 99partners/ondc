@@ -4,8 +4,8 @@ const mongoose = require('mongoose');
 const { validateContext, ensureSafeContext, createErrorResponse, createAckResponse, extractSafePayload, createTransactionTrailData } = require('../utils/contextValidator');
 
 // BPP configuration
-const BPP_ID = process.env.BPP_ID || 'ondc.bpp.com';
-const BPP_URI = process.env.BPP_URI || 'https://ondc.bpp.com/api';
+const BPP_ID = 'staging.99digicom.com';
+const BPP_URI = 'https://staging.99digicom.com';
 
 // Import InitData model to access init request data
 const InitDataSchema = new mongoose.Schema({
@@ -115,6 +115,7 @@ router.post('/', async (req, res) => {
         context: req.body?.context || {},
         message: req.body?.message || {},
         order: req.body?.message?.order || {},
+        raw_payload: req.body || {}, // Store the full raw payload
         created_at: new Date()
       });
       await incomingData.save();
@@ -130,6 +131,7 @@ router.post('/', async (req, res) => {
           context: req.body?.context || {},
           message: req.body?.message || {},
           order: req.body?.message?.order || {},
+          raw_payload: req.body || {}, // Store the full raw payload
           created_at: new Date()
         });
         await incomingData.save();
