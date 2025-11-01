@@ -175,6 +175,7 @@ router.post('/', async (req, res) => {
       });
       return res.status(400).json(errorResponse);
     }
+<<<<<<< HEAD
     
     // Store select data in MongoDB Atlas with retry mechanism
     let retries = 0;
@@ -204,6 +205,24 @@ router.post('/', async (req, res) => {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
+=======
+
+    // Store select data in MongoDB Atlas
+    try {
+      const selectData = new SelectData({
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        context,
+        message,
+        order: message.order
+      });
+      await selectData.save();
+      console.log('✅ Select data saved to MongoDB Atlas database');
+      console.log('📊 Saved select request for transaction:', context.transaction_id);
+    } catch (dbError) {
+      console.error('❌ Failed to save select data to MongoDB Atlas:', dbError.message);
+      // Continue execution but log the error
+>>>>>>> parent of 4440bb7 (update other file)
     }
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit

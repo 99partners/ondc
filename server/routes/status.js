@@ -44,9 +44,7 @@ const StatusDataSchema = new mongoose.Schema({
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const StatusData = mongoose.models.StatusData || mongoose.model('StatusData', StatusDataSchema);
 
-<<<<<<< HEAD
-// Utility functions are imported from ../utils/contextValidator
-=======
+
 // Utility Functions
 function validateContext(context) {
   const errors = [];
@@ -91,8 +89,6 @@ function createAckResponse() {
     message: { ack: { status: 'ACK' } }
   };
 }
->>>>>>> parent of 85d7da9 (response context now updated)
-
 // Store transaction trail
 async function storeTransactionTrail(data) {
   try {
@@ -178,35 +174,22 @@ router.post('/', async (req, res) => {
       });
       return res.status(400).json(errorResponse);
     }
-    
-    // Store status data in MongoDB Atlas with retry mechanism
-    let retries = 0;
-    const maxRetries = 3;
-    
-    while (retries < maxRetries) {
-      try {
-        const statusData = new StatusData({
-          transaction_id: context.transaction_id,
-          message_id: context.message_id,
-          context,
-          message,
-          order_id: message.order_id
-        });
-        await statusData.save();
-        console.log('✅ Status data saved to MongoDB Atlas database');
-        console.log('📊 Saved status request for transaction:', context.transaction_id);
-        break; // Exit the loop if successful
-      } catch (dbError) {
-        retries++;
-        console.error(`❌ Failed to save status data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
-        
-        if (retries >= maxRetries) {
-          console.error('❌ Max retries reached. Could not save status data.');
-        } else {
-          // Wait before retrying
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
+
+    // Store status data in MongoDB Atlas
+    try {
+      const statusData = new StatusData({
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        context,
+        message,
+        order_id: message.order_id
+      });
+      await statusData.save();
+      console.log('✅ Status data saved to MongoDB Atlas database');
+      console.log('📊 Saved status request for transaction:', context.transaction_id);
+    } catch (dbError) {
+      console.error('❌ Failed to save status data to MongoDB Atlas:', dbError.message);
+      // Continue execution but log the error
     }
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit
@@ -233,33 +216,8 @@ router.post('/', async (req, res) => {
       console.error('❌ Failed to store transaction trail:', trailError.message);
     }
 
-<<<<<<< HEAD
-    // Send ACK response with proper context
-    const ackResponse = {
-      context: {
-        domain: context.domain,
-        country: context.country,
-        city: context.city,
-        action: context.action,
-        core_version: context.core_version,
-        bap_id: context.bap_id,
-        bap_uri: context.bap_uri,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI,
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        timestamp: new Date().toISOString()
-      },
-      message: {
-        ack: {
-          status: "ACK"
-        }
-      }
-    };
-=======
     // Send ACK response
     const ackResponse = createAckResponse();
->>>>>>> parent of 85d7da9 (response context now updated)
     console.log('✅ Sending ACK response for status request');
     res.status(202).json(ackResponse);
     
