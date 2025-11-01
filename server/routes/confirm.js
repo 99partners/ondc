@@ -52,6 +52,7 @@ const ConfirmDataSchema = new mongoose.Schema({
   context: { type: Object, required: true },
   message: { type: Object, required: true },
   order: { type: Object },
+  raw_payload: { type: Object, required: true }, // Store the complete raw request
   created_at: { type: Date, default: Date.now }
 });
 
@@ -128,7 +129,8 @@ async function storeTransactionTrail(data) {
 // /confirm API - Buyer app sends confirm request
 router.post('/', async (req, res) => {
   try {
-    const payload = req.body;
+    // Safely extract payload with defaults if req.body is undefined
+    const payload = req.body || {};
     
     console.log('=== INCOMING CONFIRM REQUEST ===');
     console.log('Transaction ID:', payload?.context?.transaction_id);
@@ -136,7 +138,32 @@ router.post('/', async (req, res) => {
     console.log('BAP ID:', payload?.context?.bap_id);
     console.log('Domain:', payload?.context?.domain);
     console.log('Action:', payload?.context?.action);
+    console.log('Full Request Payload:', JSON.stringify(payload, null, 2));
     console.log('================================');
+    
+    // Store ALL incoming requests immediately regardless of validation
+    try {
+      // Create a deep copy of the payload to avoid reference issues
+      const rawPayload = JSON.parse(JSON.stringify(payload));
+      
+      const confirmData = new ConfirmData({
+        transaction_id: payload?.context?.transaction_id || 'unknown',
+        message_id: payload?.context?.message_id || 'unknown',
+        context: payload?.context || {},
+        message: payload?.message || {},
+        order: payload?.message?.order || {},
+        raw_payload: rawPayload, // Store the complete raw request
+        created_at: new Date()
+      });
+      
+      // Use await to ensure the data is saved before proceeding
+      await confirmData.save();
+      console.log('✅ Confirm data saved to MongoDB Atlas database');
+      console.log('📊 Saved confirm request for transaction:', payload?.context?.transaction_id || 'unknown');
+    } catch (dbError) {
+      console.error('❌ Failed to save confirm data to MongoDB Atlas:', dbError.message);
+      // Continue execution but log the error
+    }
     
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
