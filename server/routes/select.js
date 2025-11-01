@@ -50,9 +50,6 @@ const SelectDataSchema = new mongoose.Schema({
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const SelectData = mongoose.models.SelectData || mongoose.model('SelectData', SelectDataSchema);
 
-<<<<<<< HEAD
-// Utility Functions are now imported from '../utils/contextValidator'
-=======
 // Utility Functions
 function validateContext(context) {
   const errors = [];
@@ -97,7 +94,6 @@ function createAckResponse() {
     message: { ack: { status: 'ACK' } }
   };
 }
->>>>>>> parent of 85d7da9 (response context now updated)
 
 // Store transaction trail
 async function storeTransactionTrail(data) {
@@ -234,13 +230,8 @@ router.post('/', async (req, res) => {
       console.error('❌ Failed to store transaction trail:', trailError.message);
     }
 
-<<<<<<< HEAD
-    // Send ACK response with echoed context (to mirror search-style lightweight ack)
-    const ackWithContext = { ...createAckResponse(), context };
-=======
     // Send ACK response
     const ackResponse = createAckResponse();
->>>>>>> parent of 85d7da9 (response context now updated)
     console.log('✅ Sending ACK response for select request');
     res.status(202).json(ackWithContext);
     
@@ -254,11 +245,25 @@ router.post('/', async (req, res) => {
 // Debug endpoints to view stored data
 router.get('/debug', async (req, res) => {
   try {
-    const selectRequests = await SelectData.find().sort({ created_at: -1 }).limit(50);
+    // Get query parameters for filtering
+    const { transaction_id, message_id, bap_id } = req.query;
+    const limit = parseInt(req.query.limit) || 50;
+    
+    // Build query based on filters
+    const query = {};
+    if (transaction_id) query.transaction_id = transaction_id;
+    if (message_id) query.message_id = message_id;
+    if (bap_id && bap_id !== 'undefined') {
+      query['context.bap_id'] = bap_id;
+    }
+    
+    const selectRequests = await SelectData.find(query).sort({ created_at: -1 }).limit(limit);
     
     // Process data to handle undefined context properties
     const safeRequests = selectRequests.map(request => {
-      const safeRequest = request.toObject();
+      // Handle case where toObject might not be available
+      const safeRequest = request.toObject ? request.toObject() : {...request};
+      
       // Ensure context is always an object
       if (!safeRequest.context) {
         safeRequest.context = {};

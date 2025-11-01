@@ -50,8 +50,6 @@ const SearchDataSchema = new mongoose.Schema({
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const SearchData = mongoose.models.SearchData || mongoose.model('SearchData', SearchDataSchema);
 
-<<<<<<< HEAD
-=======
 // Utility Functions
 function validateContext(context) {
   const errors = [];
@@ -96,7 +94,6 @@ function createAckResponse() {
   };
 }
 
->>>>>>> parent of 85d7da9 (response context now updated)
 // Store transaction trail
 async function storeTransactionTrail(data) {
   try {
@@ -279,10 +276,11 @@ router.get('/debug', async (req, res) => {
     
     // Process data to handle undefined context properties
     const safeRequests = searchRequests.map(request => {
-      const safeRequest = request.toObject();
+      const safeRequest = request.toObject ? request.toObject() : {...request};
       if (!safeRequest.context) {
         safeRequest.context = {};
       }
+      
       return safeRequest;
     });
     
