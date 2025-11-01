@@ -344,7 +344,6 @@ const ConfirmDataSchema = new mongoose.Schema({
   context: { type: Object, required: true },
   message: { type: Object, required: true },
   order: { type: Object },
-  raw_payload: { type: Object }, // Store the complete raw request
   billing_matched: { type: Boolean, default: false },
   init_billing_created_at: { type: String },
   confirm_billing_created_at: { type: String },
@@ -423,43 +422,9 @@ async function storeTransactionTrail(data) {
 
 // /confirm API - Buyer app sends confirm request
 router.post('/', async (req, res) => {
-  console.log('CONFIRM REQUEST RECEIVED');
-  
-  // IMPORTANT: Store raw request data first thing
-  let rawPayload = null;
   try {
-    // Make a safe copy of the request body
-    rawPayload = JSON.parse(JSON.stringify(req.body || {}));
-    console.log('Raw payload captured successfully');
-  } catch (e) {
-    console.error('Error copying request payload:', e);
-    rawPayload = { error: 'Failed to copy request' };
-  }
-  
-  // Store in database IMMEDIATELY
-  const confirmData = new ConfirmData({
-    transaction_id: rawPayload?.context?.transaction_id || 'unknown',
-    message_id: rawPayload?.context?.message_id || 'unknown',
-    context: rawPayload?.context || {},
-    message: rawPayload?.message || {},
-    order: rawPayload?.message?.order || {},
-    raw_payload: rawPayload,
-    created_at: new Date()
-  });
-  
-  try {
-    // Save without validation to ensure it's stored
-    const savedData = await confirmData.save({ validateBeforeSave: false });
-    console.log('✅ CONFIRM DATA SAVED TO DATABASE WITH ID:', savedData._id);
-    console.log('✅ Transaction ID:', rawPayload?.context?.transaction_id || 'unknown');
-  } catch (dbError) {
-    console.error('❌ DATABASE SAVE ERROR:', dbError);
-  }
-  
-  // Continue with the rest of the handler
-  const payload = req.body;
-  
-  try {
+    const payload = req.body;
+    
     console.log('=== INCOMING CONFIRM REQUEST ===');
     console.log('Transaction ID:', payload?.context?.transaction_id);
     console.log('Message ID:', payload?.context?.message_id);
@@ -656,34 +621,10 @@ router.post('/', async (req, res) => {
 // Debug endpoint to view stored data
 router.get('/debug', async (req, res) => {
   try {
-    // Get query parameters for filtering
-    const limit = parseInt(req.query.limit) || 50;
-    const transactionId = req.query.transaction_id;
-    const messageId = req.query.message_id;
-    const bapId = req.query.bap_id;
-    
-    // Build query based on filters
-    const query = {};
-    if (transactionId) query.transaction_id = transactionId;
-    if (messageId) query.message_id = messageId;
-    if (bapId) query['context.bap_id'] = bapId;
-    
-    // Count total documents in collection
-    const totalCount = await ConfirmData.countDocuments();
-    
-    // Get filtered results
-    const confirmRequests = await ConfirmData.find(query)
-      .sort({ created_at: -1 })
-      .limit(limit);
-    
-    const initRequests = await InitData.find(transactionId ? {transaction_id: transactionId} : {})
-      .sort({ created_at: -1 })
-      .limit(limit);
+    const confirmRequests = await ConfirmData.find().sort({ created_at: -1 }).limit(50);
+    const initRequests = await InitData.find().sort({ created_at: -1 }).limit(50);
     
     res.json({
-      total_in_db: totalCount,
-      filters_applied: Object.keys(query).length > 0 ? query : "none",
-      limit: limit,
       confirm_count: confirmRequests.length,
       init_count: initRequests.length,
       confirm_requests: confirmRequests.map(req => ({
@@ -703,7 +644,6 @@ router.get('/debug', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error in debug endpoint:', error);
     res.status(500).json({ error: error.message });
   }
 });
