@@ -19,7 +19,9 @@ const app = express();
 // Middleware
 const allowedOrigins = [
   'https://pramaan.ondc.org',
-  'https://pramaan.ondc.org/beta/staging/mock'
+  'https://pramaan.ondc.org/beta/staging/mock',
+  'https://staging.99digicom.com',
+  'http://staging.99digicom.com'
 ];
 
 app.use(cors({
@@ -27,9 +29,11 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      console.log('CORS blocked origin:', origin);
+      callback(null, true); // 临时允许所有来源，以便调试
     }
-  }
+  },
+  credentials: true
 }));
 app.use(bodyParser.json({ limit: '5mb' }));
 
