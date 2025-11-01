@@ -374,47 +374,41 @@ async function storeTransactionTrail(data) {
 
 // /confirm POST route
 router.post('/', async (req, res) => {
-  // IMPORTANT: Store raw request data immediately
-  let rawRequest = null;
-  try {
-    // Store the raw request body as string first
-    rawRequest = JSON.stringify(req.body);
-    console.log('Raw request captured:', rawRequest.substring(0, 100) + '...');
-  } catch (e) {
-    console.error('Error stringifying request:', e);
-    rawRequest = '{"error": "Failed to stringify request"}';
-  }
+  // IMPORTANT: Store raw request immediately at the beginning
+  const payload = req.body || {};
   
-  // Store in database immediately before any processing
+  // Log the incoming request
+  console.log('=== INCOMING CONFIRM REQUEST ===');
+  console.log('Transaction ID:', payload?.context?.transaction_id);
+  console.log('Message ID:', payload?.context?.message_id);
+  console.log('BAP ID:', payload?.context?.bap_id);
+  console.log('Domain:', payload?.context?.domain);
+  console.log('Action:', payload?.context?.action);
+  console.log('================================');
+  
+  // Store the raw request in the database first thing
   try {
     const confirmData = new ConfirmData({
-      transaction_id: req.body?.context?.transaction_id || 'unknown',
-      message_id: req.body?.context?.message_id || 'unknown',
-      context: req.body?.context || {},
-      message: req.body?.message || {},
-      order: req.body?.message?.order || {},
-      raw_payload: req.body || {}, // Store the complete raw request
+      transaction_id: payload?.context?.transaction_id || 'unknown',
+      message_id: payload?.context?.message_id || 'unknown',
+      context: payload?.context || {},
+      message: payload?.message || {},
+      order: payload?.message?.order || {},
+      raw_payload: payload,
       created_at: new Date()
     });
     
-    // Force save without waiting for validation
-    await confirmData.save({ validateBeforeSave: false });
+    await confirmData.save();
     console.log('✅ CONFIRM DATA SAVED TO DATABASE');
   } catch (dbError) {
-    console.error('❌ DATABASE SAVE ERROR:', dbError);
+    console.error('❌ DATABASE SAVE ERROR:', dbError.message);
   }
   
+  // Continue with normal processing after storing raw data
   try {
-    const payload = req.body || {};
-
-    console.log('=== INCOMING CONFIRM REQUEST ===');
-    console.log('Transaction ID:', payload?.context?.transaction_id || 'undefined');
-    console.log('Message ID:', payload?.context?.message_id || 'undefined');
-    console.log('BAP ID:', payload?.context?.bap_id || 'undefined');
-    console.log('Domain:', payload?.context?.domain || 'undefined');
-    console.log('Action:', payload?.context?.action || 'undefined');
-    console.log('================================');
-
+    // We already have the payload from earlier
+    // No need to log the request again as we did it at the beginning
+    
     // Safe context fallback
     const safeContext = {
       transaction_id: payload?.context?.transaction_id || 'unknown',
