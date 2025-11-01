@@ -1,13 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const { validateContext, ensureSafeContext, createErrorResponse, createAckResponse } = require('../utils/contextValidator');
 
 // BPP Configuration - These should be moved to a config file in a production environment
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
 
-// Using shared validators from ../utils/contextValidator
+// ONDC Error Codes
+const ONDC_ERRORS = {
+  '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
+  '30022': { type: 'CONTEXT-ERROR', code: '30022', message: 'Invalid timestamp' },
+  '10001': { type: 'CONTEXT-ERROR', code: '10001', message: 'Invalid context: Mandatory field missing or incorrect value.' },
+  '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' }
+};
 
 // Import models - These should be moved to separate model files in a production environment
 const TransactionTrailSchema = new mongoose.Schema({
@@ -43,7 +48,6 @@ const StatusDataSchema = new mongoose.Schema({
 // Check if models are already registered to avoid OverwriteModelError
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const StatusData = mongoose.models.StatusData || mongoose.model('StatusData', StatusDataSchema);
-
 
 // Utility Functions
 function validateContext(context) {
@@ -89,6 +93,7 @@ function createAckResponse() {
     message: { ack: { status: 'ACK' } }
   };
 }
+
 // Store transaction trail
 async function storeTransactionTrail(data) {
   try {
@@ -103,93 +108,87 @@ async function storeTransactionTrail(data) {
 // /status API - Buyer app sends status request
 router.post('/', async (req, res) => {
   try {
-    // Safely extract payload with defaults if req.body is undefined
-    const payload = req.body || {};
+    const payload = req.body;
     
-    // Create a safe context object with default values for missing properties
-    const safeContext = ensureSafeContext(payload?.context);
-    const { context = safeContext, message = payload.message || {} } = payload;
+    console.log('=== INCOMING STATUS REQUEST ===');
+    console.log('Transaction ID:', payload?.context?.transaction_id);
+    console.log('Message ID:', payload?.context?.message_id);
+    console.log('BAP ID:', payload?.context?.bap_id);
+    console.log('Domain:', payload?.context?.domain);
+    console.log('Action:', payload?.context?.action);
+    console.log('================================');
     
-    // Store all incoming requests regardless of validation
-    try {
-      const statusData = new StatusData({
-        transaction_id: safeContext.transaction_id || 'unknown',
-        message_id: safeContext.message_id || 'unknown',
-        context: payload.context || {},
-        message: payload.message || {},
-        order_id: payload.message?.order_id || '',
-        created_at: new Date()
-      });
-      await statusData.save();
-      console.log(`✅ Status data stored: ${safeContext.transaction_id}/${safeContext.message_id}`);
-    } catch (storeError) {
-      console.error('❌ Failed to store incoming status request:', storeError.message);
-    }
-    
-    // Basic validation
+    // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
       const errorResponse = createErrorResponse('10001', 'Invalid request structure');
       await storeTransactionTrail({
-        transaction_id: safeContext.transaction_id,
-        message_id: safeContext.message_id,
+        transaction_id: payload?.context?.transaction_id || 'unknown',
+        message_id: payload?.context?.message_id || 'unknown',
         action: 'status',
         direction: 'incoming',
         status: 'NACK',
-        context: safeContext,
+        context: payload?.context || {},
         error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: safeContext.bap_id,
-        bap_uri: safeContext.bap_uri,
+        bap_id: payload?.context?.bap_id,
+        bap_uri: payload?.context?.bap_uri,
         bpp_id: BPP_ID,
-        bpp_uri: BPP_URI,
-        domain: safeContext.domain,
-        country: safeContext.country,
-        city: safeContext.city,
-        core_version: safeContext.core_version
-      });
-      return res.status(400).json(errorResponse);
-    }
-    
-    // Validate context
-    const contextErrors = validateContext(payload.context);
-    if (contextErrors.length > 0) {
-      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
-      await storeTransactionTrail({
-        transaction_id: safeContext.transaction_id,
-        message_id: safeContext.message_id,
-        action: safeContext.action,
-        direction: 'incoming',
-        status: 'NACK',
-        context: safeContext,
-        error: errorResponse.error,
-        timestamp: new Date(),
-        bap_id: safeContext.bap_id,
-        bap_uri: safeContext.bap_uri,
-        bpp_id: safeContext.bpp_id || BPP_ID,
-        bpp_uri: safeContext.bpp_uri || BPP_URI,
-        domain: safeContext.domain,
-        country: safeContext.country,
-        city: safeContext.city,
-        core_version: safeContext.core_version
+        bpp_uri: BPP_URI
       });
       return res.status(400).json(errorResponse);
     }
 
-    // Store status data in MongoDB Atlas
-    try {
-      const statusData = new StatusData({
+    const { context, message } = payload;
+    
+    // Validate context
+    const contextErrors = validateContext(context);
+    if (contextErrors.length > 0) {
+      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
+      await storeTransactionTrail({
         transaction_id: context.transaction_id,
         message_id: context.message_id,
+        action: 'status',
+        direction: 'incoming',
+        status: 'NACK',
         context,
-        message,
-        order_id: message.order_id
+        error: errorResponse.error,
+        timestamp: new Date(),
+        bap_id: context.bap_id,
+        bap_uri: context.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI
       });
-      await statusData.save();
-      console.log('✅ Status data saved to MongoDB Atlas database');
-      console.log('📊 Saved status request for transaction:', context.transaction_id);
-    } catch (dbError) {
-      console.error('❌ Failed to save status data to MongoDB Atlas:', dbError.message);
-      // Continue execution but log the error
+      return res.status(400).json(errorResponse);
+    }
+
+    // Store status data in MongoDB Atlas with retry mechanism
+    let retries = 0;
+    const maxRetries = 3;
+    
+    while (retries < maxRetries) {
+      try {
+        const statusData = new StatusData({
+          transaction_id: context.transaction_id,
+          message_id: context.message_id,
+          context,
+          message,
+          order_id: message.order_id
+        });
+        await statusData.save();
+        console.log('✅ Status data saved to MongoDB Atlas database');
+        console.log('📊 Saved status request for transaction:', context.transaction_id);
+        break; // Exit the loop if successful
+      } catch (dbError) {
+        retries++;
+        console.error(`❌ Failed to save status data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
+        
+        if (retries >= maxRetries) {
+          console.error('❌ Max retries reached. Could not save status data.');
+        } else {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
     }
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit
@@ -232,28 +231,9 @@ router.post('/', async (req, res) => {
 router.get('/debug', async (req, res) => {
   try {
     const statusRequests = await StatusData.find().sort({ created_at: -1 }).limit(50);
-    
-    // Process data to handle undefined context properties
-    const safeRequests = statusRequests.map(request => {
-      const safeRequest = request.toObject();
-      if (!safeRequest.context) {
-        safeRequest.context = {};
-      }
-      
-      // Ensure all required context properties exist to prevent 'undefined' errors
-      const requiredProps = ['domain', 'action', 'bap_id', 'bap_uri', 'transaction_id', 'message_id', 'timestamp'];
-      requiredProps.forEach(prop => {
-        if (!safeRequest.context[prop]) {
-          safeRequest.context[prop] = '';
-        }
-      });
-      
-      return safeRequest;
-    });
-    
     res.json({
       count: statusRequests.length,
-      requests: safeRequests
+      requests: statusRequests
     });
     
   } catch (error) {

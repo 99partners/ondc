@@ -1,13 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const { validateContext, ensureSafeContext, createErrorResponse, createAckResponse } = require('../utils/contextValidator');
 
 // BPP Configuration - These should be moved to a config file in a production environment
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
 
-// Using shared validators from ../utils/contextValidator
+// ONDC Error Codes
+const ONDC_ERRORS = {
+  '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
+  '30022': { type: 'CONTEXT-ERROR', code: '30022', message: 'Invalid timestamp' },
+  '10001': { type: 'CONTEXT-ERROR', code: '10001', message: 'Invalid context: Mandatory field missing or incorrect value.' },
+  '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' }
+};
 
 // Import models - These should be moved to separate model files in a production environment
 const TransactionTrailSchema = new mongoose.Schema({
@@ -43,7 +48,6 @@ const InitDataSchema = new mongoose.Schema({
 // Check if models are already registered to avoid OverwriteModelError
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const InitData = mongoose.models.InitData || mongoose.model('InitData', InitDataSchema);
-
 
 // Utility Functions
 function validateContext(context) {
@@ -102,110 +106,108 @@ async function storeTransactionTrail(data) {
 // /init API - Buyer app sends init request
 router.post('/', async (req, res) => {
   try {
-    // Safely extract payload with defaults if req.body is undefined
-    const payload = req.body || {};
+    const payload = req.body;
     
-    // Store all incoming requests regardless of validation
-    try {
-      const initData = new InitData({
-        requestBody: payload,
-        timestamp: new Date()
-      });
-      await initData.save();
-    } catch (storeError) {
-      console.error('❌ Failed to store incoming init request:', storeError.message);
-    }
+    console.log('=== INCOMING INIT REQUEST ===');
+    console.log('Transaction ID:', payload?.context?.transaction_id);
+    console.log('Message ID:', payload?.context?.message_id);
+    console.log('BAP ID:', payload?.context?.bap_id);
+    console.log('Domain:', payload?.context?.domain);
+    console.log('Action:', payload?.context?.action);
+    console.log('================================');
     
-    // Create a safe context object with default values for missing properties
-    const safeContext = ensureSafeContext(payload?.context);
-    const { message = payload.message || {} } = payload;
-    
-    // Basic validation
+    // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
       const errorResponse = createErrorResponse('10001', 'Invalid request structure');
       await storeTransactionTrail({
-        transaction_id: safeContext.transaction_id,
-        message_id: safeContext.message_id,
+        transaction_id: payload?.context?.transaction_id || 'unknown',
+        message_id: payload?.context?.message_id || 'unknown',
         action: 'init',
         direction: 'incoming',
         status: 'NACK',
-        context: safeContext,
+        context: payload?.context || {},
         error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: safeContext.bap_id,
-        bap_uri: safeContext.bap_uri,
+        bap_id: payload?.context?.bap_id,
+        bap_uri: payload?.context?.bap_uri,
         bpp_id: BPP_ID,
-        bpp_uri: BPP_URI,
-        domain: safeContext.domain,
-        country: safeContext.country,
-        city: safeContext.city,
-        core_version: safeContext.core_version
+        bpp_uri: BPP_URI
       });
       return res.status(400).json(errorResponse);
     }
+
+    const { context, message } = payload;
     
     // Validate context
-    const contextErrors = validateContext(payload.context);
+    const contextErrors = validateContext(context);
     if (contextErrors.length > 0) {
       const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
       await storeTransactionTrail({
-        transaction_id: safeContext.transaction_id,
-        message_id: safeContext.message_id,
-        action: safeContext.action,
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        action: 'init',
         direction: 'incoming',
         status: 'NACK',
-        context: safeContext,
+        context,
         error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: safeContext.bap_id,
-        bap_uri: safeContext.bap_uri,
-        bpp_id: safeContext.bpp_id || BPP_ID,
-        bpp_uri: safeContext.bpp_uri || BPP_URI,
-        domain: safeContext.domain,
-        country: safeContext.country,
-        city: safeContext.city,
-        core_version: safeContext.core_version
+        bap_id: context.bap_id,
+        bap_uri: context.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI
       });
       return res.status(400).json(errorResponse);
     }
 
-    // Store init data in MongoDB Atlas
-    try {
-      const initData = new InitData({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        context,
-        message,
-        order: message.order
-      });
-      await initData.save();
-      console.log('✅ Init data saved to MongoDB Atlas database');
-      console.log('📊 Saved init request for transaction:', context.transaction_id);
-    } catch (dbError) {
-      console.error('❌ Failed to save init data to MongoDB Atlas:', dbError.message);
-      // Continue execution but log the error
-
+    // Store init data in MongoDB Atlas with retry mechanism
+    let retries = 0;
+    const maxRetries = 3;
+    
+    while (retries < maxRetries) {
+      try {
+        const initData = new InitData({
+          transaction_id: context.transaction_id,
+          message_id: context.message_id,
+          context,
+          message,
+          order: message.order
+        });
+        await initData.save();
+        console.log('✅ Init data saved to MongoDB Atlas database');
+        console.log('📊 Saved init request for transaction:', context.transaction_id);
+        break; // Exit the loop if successful
+      } catch (dbError) {
+        retries++;
+        console.error(`❌ Failed to save init data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
+        
+        if (retries >= maxRetries) {
+          console.error('❌ Max retries reached. Could not save init data.');
+        } else {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
     }
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit
     try {
       await storeTransactionTrail({
-        transaction_id: safeContext.transaction_id,
-        message_id: safeContext.message_id,
-        action: safeContext.action,
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        action: 'init',
         direction: 'incoming',
         status: 'ACK',
-        context: safeContext,
+        context,
         message,
         timestamp: new Date(),
-        bap_id: safeContext.bap_id,
-        bap_uri: safeContext.bap_uri,
-        bpp_id: safeContext.bpp_id || BPP_ID,
-        bpp_uri: safeContext.bpp_uri || BPP_URI,
-        domain: safeContext.domain,
-        country: safeContext.country,
-        city: safeContext.city,
-        core_version: safeContext.core_version
+        bap_id: context.bap_id,
+        bap_uri: context.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI,
+        domain: context.domain,
+        country: context.country,
+        city: context.city,
+        core_version: context.core_version
       });
     } catch (trailError) {
       console.error('❌ Failed to store transaction trail:', trailError.message);
@@ -214,7 +216,7 @@ router.post('/', async (req, res) => {
     // Send ACK response
     const ackResponse = createAckResponse();
     console.log('✅ Sending ACK response for init request');
-    res.status(202).json(ackWithContext);
+    res.status(202).json(ackResponse);
     
   } catch (error) {
     console.error('❌ Error in /init:', error);
@@ -226,43 +228,12 @@ router.post('/', async (req, res) => {
 // Debug endpoint to view stored data
 router.get('/debug', async (req, res) => {
   try {
-    // Get query parameters for filtering
-    const { transaction_id, message_id, bap_id } = req.query;
-    const limit = parseInt(req.query.limit) || 50;
-    
-    // Build query based on filters
-    const query = {};
-    if (transaction_id) query.transaction_id = transaction_id;
-    if (message_id) query.message_id = message_id;
-    if (bap_id && bap_id !== 'undefined') {
-      query['context.bap_id'] = bap_id;
-    }
-    
-    const initRequests = await InitData.find(query).sort({ created_at: -1 }).limit(limit);
-    
-    // Process data to handle undefined context properties
-    const safeRequests = initRequests.map(request => {
-      const safeRequest = request.toObject ? request.toObject() : {...request};
-      if (!safeRequest.context) {
-        safeRequest.context = {};
-      }
-      
-      // Ensure all required context properties exist to prevent 'undefined' errors
-      const requiredProps = ['domain', 'action', 'bap_id', 'bap_uri', 'transaction_id', 'message_id', 'timestamp'];
-      requiredProps.forEach(prop => {
-        if (!safeRequest.context[prop]) {
-          safeRequest.context[prop] = '';
-        }
-      });
-      
-      return safeRequest;
-    });
-    
+    const initRequests = await InitData.find().sort({ created_at: -1 }).limit(50);
     res.json({
       count: initRequests.length,
-      filters: { transaction_id, message_id, bap_id, limit },
-      requests: safeRequests
+      requests: initRequests
     });
+    
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

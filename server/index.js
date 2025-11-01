@@ -10,67 +10,36 @@ const searchRoutes = require('./routes/search');
 const searchPramaanRoutes = require('./routes/search-pramaan');
 const selectRoutes = require('./routes/select');
 const initRoutes = require('./routes/init');
+const confirmRoutes = require('./routes/confirm');
 const updateRoutes = require('./routes/update');
-const statusRoutes = require('./routes/status');
-const cancelRoutes = require('./routes/cancel');
-const confirmRouter = require('./routes/confirm');
 
 const app = express();
 
 // Middleware
 const allowedOrigins = [
   'https://pramaan.ondc.org',
-  'https://pramaan.ondc.org/beta/staging/mock',
-  'https://staging.99digicom.com',
-  'http://staging.99digicom.com'
+  'https://pramaan.ondc.org/beta/staging/mock'
 ];
 
-// 允许所有来源访问API
 app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
 }));
-
-// 添加请求日志中间件
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-  next();
-});
 app.use(bodyParser.json({ limit: '5mb' }));
 
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const HOST = process.env.HOST || '0.0.0.0'; // 监听所有网络接口，确保可以从外部访问
 
 // MongoDB Atlas Configuration - Using your provided URI
 const MONGODB_URI = 'mongodb+srv://99partnersin:99Partnersin@ondcseller.nmuucu3.mongodb.net/ondcSeller?retryWrites=true&w=majority&appName=ondcSeller';
 
-// Health endpoint with detailed status
-app.get('/health', (req, res) => {
-  const serverInfo = {
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    environment: NODE_ENV,
-    host: HOST,
-    port: PORT,
-    mongodb_connected: mongoose.connection.readyState === 1,
-    uptime: process.uptime(),
-    memory_usage: process.memoryUsage(),
-    routes: {
-      search: true,
-      select: true,
-      init: true,
-      confirm: true,
-      cancel: true,
-      update: true,
-      status: true
-    }
-  };
-  console.log('Health check requested:', serverInfo);
-  res.json(serverInfo);
-});
+// Health endpoint
+app.get('/health', (req, res) => res.json({ status: 'OK', timestamp: new Date().toISOString() }));
 
 // Root endpoint - helpful message instead of "Cannot GET /"
 app.get('/', (req, res) => {
@@ -80,15 +49,14 @@ app.get('/', (req, res) => {
     message: 'Use POST /search for ONDC search requests. See /health for status.'
   });
 });
- // adjust path if needed
-app.use('/confirm', confirmRouter);
+
+// Use route files
 app.use('/search', searchRoutes); // Standard search endpoint
-app.use('/search-pramaan', searchPramaanRoutes); // Pramaan search endpoint
+app.use('/search', searchPramaanRoutes); // Pramaan mock search endpoint
 app.use('/select', selectRoutes);
 app.use('/init', initRoutes);
+app.use('/confirm', confirmRoutes);
 app.use('/update', updateRoutes);
-app.use('/status', statusRoutes);
-app.use('/cancel', cancelRoutes);
 
 // Debug endpoint for transaction trails
 app.get('/debug/transactions', async (req, res) => {
@@ -118,17 +86,16 @@ mongoose.connect(MONGODB_URI, {
 .then(() => {
   console.log('✅ Connected to MongoDB Atlas successfully!');
   if (require.main === module) {
-    app.listen(PORT, HOST, () => {
-      console.log(`🚀 ONDC Seller BPP listening on http://${HOST}:${PORT}`);
-      console.log(`🌐 Environment: ${NODE_ENV}`);
+    app.listen(PORT, () => {
+      console.log(`🚀 ONDC Seller BPP listening on http://localhost:${PORT}`);
       console.log('📊 Debug endpoints available:');
-      console.log(`   - http://${HOST}:${PORT}/search/debug`);
-      console.log(`   - http://${HOST}:${PORT}/search/pramaan/debug`);
-      console.log(`   - http://${HOST}:${PORT}/select/debug`);
-      console.log(`   - http://${HOST}:${PORT}/init/debug`);
-      console.log(`   - http://${HOST}:${PORT}/confirm/debug`);
-      console.log(`   - http://${HOST}:${PORT}/update/debug`);
-      console.log(`   - http://${HOST}:${PORT}/debug/transactions`);
+      console.log(`   - http://localhost:${PORT}/search/debug`);
+      console.log(`   - http://localhost:${PORT}/search/pramaan/debug`);
+      console.log(`   - http://localhost:${PORT}/select/debug`);
+      console.log(`   - http://localhost:${PORT}/init/debug`);
+      console.log(`   - http://localhost:${PORT}/confirm/debug`);
+      console.log(`   - http://localhost:${PORT}/update/debug`);
+      console.log(`   - http://localhost:${PORT}/debug/transactions`);
       console.log('🔍 Search endpoints:');
       console.log(`   - POST http://localhost:${PORT}/search (Standard)`);
       console.log(`   - POST http://localhost:${PORT}/search/pramaan (Pramaan Mock)`);

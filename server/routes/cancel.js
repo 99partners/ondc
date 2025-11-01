@@ -1,13 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const { validateContext, ensureSafeContext, createErrorResponse, createAckResponse } = require('../utils/contextValidator');
 
 // BPP Configuration - These should be moved to a config file in a production environment
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
 
-// Using shared validators from ../utils/contextValidator
+// ONDC Error Codes
+const ONDC_ERRORS = {
+  '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
+  '30022': { type: 'CONTEXT-ERROR', code: '30022', message: 'Invalid timestamp' },
+  '10001': { type: 'CONTEXT-ERROR', code: '10001', message: 'Invalid context: Mandatory field missing or incorrect value.' },
+  '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' }
+};
 
 // Import models - These should be moved to separate model files in a production environment
 const TransactionTrailSchema = new mongoose.Schema({
@@ -45,9 +50,6 @@ const CancelDataSchema = new mongoose.Schema({
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
 const CancelData = mongoose.models.CancelData || mongoose.model('CancelData', CancelDataSchema);
 
-<<<<<<< HEAD
-// Utility functions are imported from ../utils/contextValidator
-=======
 // Utility Functions
 function validateContext(context) {
   const errors = [];
@@ -92,7 +94,6 @@ function createAckResponse() {
     message: { ack: { status: 'ACK' } }
   };
 }
->>>>>>> parent of 85d7da9 (response context now updated)
 
 // Store transaction trail
 async function storeTransactionTrail(data) {
@@ -108,15 +109,16 @@ async function storeTransactionTrail(data) {
 // /cancel API - Buyer app sends cancel request
 router.post('/', async (req, res) => {
   try {
-    // Safely extract payload with defaults if req.body is undefined
-    const payload = req.body || {};
+    const payload = req.body;
     
-    // Create a safe context object with default values for missing properties
-    const safeContext = ensureSafeContext(payload?.context);
+    console.log('=== INCOMING CANCEL REQUEST ===');
+    console.log('Transaction ID:', payload?.context?.transaction_id);
+    console.log('Message ID:', payload?.context?.message_id);
+    console.log('BAP ID:', payload?.context?.bap_id);
+    console.log('Domain:', payload?.context?.domain);
+    console.log('Action:', payload?.context?.action);
+    console.log('================================');
     
-<<<<<<< HEAD
-    // Store all incoming requests regardless of validation
-=======
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
       const errorResponse = createErrorResponse('10001', 'Invalid request structure');
@@ -160,144 +162,63 @@ router.post('/', async (req, res) => {
       return res.status(400).json(errorResponse);
     }
 
-    // Store cancel data in MongoDB Atlas
-    try {
-      const cancelData = new CancelData({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        context,
-        message,
-        order_id: message.order_id,
-        cancellation_reason_id: message.cancellation_reason_id
-      });
-      await cancelData.save();
-      console.log('✅ Cancel data saved to MongoDB Atlas database');
-      console.log('📊 Saved cancel request for transaction:', context.transaction_id);
-    } catch (dbError) {
-      console.error('❌ Failed to save cancel data to MongoDB Atlas:', dbError.message);
+    // Store cancel data in MongoDB Atlas with retry mechanism
+    let retries = 0;
+    const maxRetries = 3;
+    
+    while (retries < maxRetries) {
+      try {
+        const cancelData = new CancelData({
+          transaction_id: context.transaction_id,
+          message_id: context.message_id,
+          context,
+          message,
+          order_id: message.order_id,
+          cancellation_reason_id: message.cancellation_reason_id
+        });
+        await cancelData.save();
+        console.log('✅ Cancel data saved to MongoDB Atlas database');
+        console.log('📊 Saved cancel request for transaction:', context.transaction_id);
+        break; // Exit the loop if successful
+      } catch (dbError) {
+        retries++;
+        console.error(`❌ Failed to save cancel data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
+        
+        if (retries >= maxRetries) {
+          console.error('❌ Max retries reached. Could not save cancel data.');
+        } else {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
     }
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit
->>>>>>> parent of 85d7da9 (response context now updated)
     try {
-      const cancelData = new CancelData({
-        transaction_id: safeContext.transaction_id || 'unknown',
-        message_id: safeContext.message_id || 'unknown',
-        context: payload.context || {},
-        message: payload.message || {},
-        order_id: payload.message?.order_id || '',
-        cancellation_reason_id: payload.message?.cancellation_reason_id || '',
-        created_at: new Date()
-      });
-      await cancelData.save();
-      console.log(`✅ Cancel data stored: ${safeContext.transaction_id}/${safeContext.message_id}`);
-    } catch (storeError) {
-      console.error('❌ Failed to store incoming cancel request:', storeError.message);
-    }
-    const { message = payload.message || {} } = payload;
-    
-    // Basic validation
-    if (!payload || !payload.context || !payload.message) {
-      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
       await storeTransactionTrail({
-        transaction_id: safeContext.transaction_id,
-        message_id: safeContext.message_id,
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
         action: 'cancel',
         direction: 'incoming',
-        status: 'NACK',
-        context: safeContext,
-        error: errorResponse.error,
+        status: 'ACK',
+        context,
+        message,
         timestamp: new Date(),
-        bap_id: safeContext.bap_id,
-        bap_uri: safeContext.bap_uri,
+        bap_id: context.bap_id,
+        bap_uri: context.bap_uri,
         bpp_id: BPP_ID,
         bpp_uri: BPP_URI,
-        domain: safeContext.domain,
-        country: safeContext.country,
-        city: safeContext.city,
-        core_version: safeContext.core_version
+        domain: context.domain,
+        country: context.country,
+        city: context.city,
+        core_version: context.core_version
       });
-      return res.status(400).json(errorResponse);
-    }
-    
-    // Validate context
-    const contextErrors = validateContext(payload.context);
-    if (contextErrors.length > 0) {
-      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
-      await storeTransactionTrail({
-        transaction_id: safeContext.transaction_id,
-        message_id: safeContext.message_id,
-        action: safeContext.action,
-        direction: 'incoming',
-        status: 'NACK',
-        context: safeContext,
-        error: errorResponse.error,
-        timestamp: new Date(),
-        bap_id: safeContext.bap_id,
-        bap_uri: safeContext.bap_uri,
-        bpp_id: safeContext.bpp_id || BPP_ID,
-        bpp_uri: safeContext.bpp_uri || BPP_URI,
-        domain: safeContext.domain,
-        country: safeContext.country,
-        city: safeContext.city,
-        core_version: safeContext.core_version
-      });
-      return res.status(400).json(errorResponse);
+    } catch (trailError) {
+      console.error('❌ Failed to store transaction trail:', trailError.message);
     }
 
-<<<<<<< HEAD
-    // Validate message
-    if (!message || !message.order_id) {
-      const errorResponse = createErrorResponse('10002', 'Message is invalid or missing required fields');
-      await storeTransactionTrail({
-        transaction_id: safeContext.transaction_id,
-        message_id: safeContext.message_id,
-        action: safeContext.action,
-        direction: 'incoming',
-        status: 'NACK',
-        context: safeContext,
-        error: errorResponse.error,
-        timestamp: new Date(),
-        bap_id: safeContext.bap_id,
-        bap_uri: safeContext.bap_uri,
-        bpp_id: safeContext.bpp_id || BPP_ID,
-        bpp_uri: safeContext.bpp_uri || BPP_URI,
-        domain: safeContext.domain,
-        country: safeContext.country,
-        city: safeContext.city,
-        core_version: safeContext.core_version
-      });
-      return res.status(400).json(errorResponse);
-    }
-
-    // Process the cancel request (in a real implementation)
-    // For this example, we'll just acknowledge the request
-    const ackResponse = createAckResponse();
-    
-    // Store transaction trail for successful request
-    await storeTransactionTrail({
-      transaction_id: safeContext.transaction_id,
-      message_id: safeContext.message_id,
-      action: safeContext.action,
-      direction: 'incoming',
-      status: 'ACK',
-      context: safeContext,
-      message,
-      timestamp: new Date(),
-      bap_id: safeContext.bap_id,
-      bap_uri: safeContext.bap_uri,
-      bpp_id: safeContext.bpp_id || BPP_ID,
-      bpp_uri: safeContext.bpp_uri || BPP_URI,
-      domain: safeContext.domain,
-      country: safeContext.country,
-      city: safeContext.city,
-      core_version: safeContext.core_version
-    });
-    
-=======
     // Send ACK response
     const ackResponse = createAckResponse();
->>>>>>> parent of 85d7da9 (response context now updated)
     console.log('✅ Sending ACK response for cancel request');
     res.status(202).json(ackResponse);
     
@@ -312,69 +233,11 @@ router.post('/', async (req, res) => {
 router.get('/debug', async (req, res) => {
   try {
     const cancelRequests = await CancelData.find().sort({ created_at: -1 }).limit(50);
-    
-    // Process data to handle undefined context properties
-    const safeRequests = cancelRequests.map(request => {
-      const safeRequest = request.toObject();
-      if (!safeRequest.context) {
-        safeRequest.context = {};
-      }
-      
-      // Ensure all required context properties exist to prevent 'undefined' errors
-      const requiredProps = ['domain', 'action', 'bap_id', 'bap_uri', 'transaction_id', 'message_id', 'timestamp', 
-                            'country', 'city', 'core_version', 'bpp_id', 'bpp_uri', 'ttl'];
-      requiredProps.forEach(prop => {
-        if (!safeRequest.context[prop]) {
-          safeRequest.context[prop] = '';
-        }
-      });
-      
-      // Ensure message properties are safe
-      if (!safeRequest.message) {
-        safeRequest.message = {};
-      }
-      
-      return safeRequest;
-    });
-    
     res.json({
       count: cancelRequests.length,
-      requests: safeRequests
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Additional debug endpoint to view transaction trails for cancel requests
-router.get('/debug/trails', async (req, res) => {
-  try {
-    const trails = await TransactionTrail.find({ action: 'cancel' })
-      .sort({ created_at: -1 })
-      .limit(50);
-    
-    // Process data to handle undefined context properties
-    const safeTrails = trails.map(trail => {
-      const safeTrail = trail.toObject();
-      if (!safeTrail.context) {
-        safeTrail.context = {};
-      }
-      
-      // Ensure all required context properties exist to prevent 'undefined' errors
-      const requiredProps = ['domain', 'action', 'bap_id', 'bap_uri', 'transaction_id', 'message_id', 'timestamp'];
-      requiredProps.forEach(prop => {
-        if (!safeTrail.context[prop]) {
-          safeTrail.context[prop] = '';
-        }
-      });
-      
-      return safeTrail;
+      requests: cancelRequests
     });
     
-    res.json({
-      count: trails.length,
-      trails: safeTrails
-    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
