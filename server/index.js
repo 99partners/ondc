@@ -24,27 +24,52 @@ const allowedOrigins = [
   'http://staging.99digicom.com'
 ];
 
+// 允许所有来源访问API
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log('CORS blocked origin:', origin);
-      callback(null, true); // 临时允许所有来源，以便调试
-    }
-  },
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
+
+// 添加请求日志中间件
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
 app.use(bodyParser.json({ limit: '5mb' }));
 
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const HOST = process.env.HOST || '0.0.0.0'; // 监听所有网络接口，确保可以从外部访问
 
 // MongoDB Atlas Configuration - Using your provided URI
 const MONGODB_URI = 'mongodb+srv://99partnersin:99Partnersin@ondcseller.nmuucu3.mongodb.net/ondcSeller?retryWrites=true&w=majority&appName=ondcSeller';
 
-// Health endpoint
-app.get('/health', (req, res) => res.json({ status: 'OK', timestamp: new Date().toISOString() }));
+// Health endpoint with detailed status
+app.get('/health', (req, res) => {
+  const serverInfo = {
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    environment: NODE_ENV,
+    host: HOST,
+    port: PORT,
+    mongodb_connected: mongoose.connection.readyState === 1,
+    uptime: process.uptime(),
+    memory_usage: process.memoryUsage(),
+    routes: {
+      search: true,
+      select: true,
+      init: true,
+      confirm: true,
+      cancel: true,
+      update: true,
+      status: true
+    }
+  };
+  console.log('Health check requested:', serverInfo);
+  res.json(serverInfo);
+});
 
 // Root endpoint - helpful message instead of "Cannot GET /"
 app.get('/', (req, res) => {
@@ -91,16 +116,17 @@ mongoose.connect(MONGODB_URI, {
 .then(() => {
   console.log('✅ Connected to MongoDB Atlas successfully!');
   if (require.main === module) {
-    app.listen(PORT, () => {
-      console.log(`🚀 ONDC Seller BPP listening on http://localhost:${PORT}`);
+    app.listen(PORT, HOST, () => {
+      console.log(`🚀 ONDC Seller BPP listening on http://${HOST}:${PORT}`);
+      console.log(`🌐 Environment: ${NODE_ENV}`);
       console.log('📊 Debug endpoints available:');
-      console.log(`   - http://localhost:${PORT}/search/debug`);
-      console.log(`   - http://localhost:${PORT}/search/pramaan/debug`);
-      console.log(`   - http://localhost:${PORT}/select/debug`);
-      console.log(`   - http://localhost:${PORT}/init/debug`);
-      console.log(`   - http://localhost:${PORT}/confirm/debug`);
-      console.log(`   - http://localhost:${PORT}/update/debug`);
-      console.log(`   - http://localhost:${PORT}/debug/transactions`);
+      console.log(`   - http://${HOST}:${PORT}/search/debug`);
+      console.log(`   - http://${HOST}:${PORT}/search/pramaan/debug`);
+      console.log(`   - http://${HOST}:${PORT}/select/debug`);
+      console.log(`   - http://${HOST}:${PORT}/init/debug`);
+      console.log(`   - http://${HOST}:${PORT}/confirm/debug`);
+      console.log(`   - http://${HOST}:${PORT}/update/debug`);
+      console.log(`   - http://${HOST}:${PORT}/debug/transactions`);
       console.log('🔍 Search endpoints:');
       console.log(`   - POST http://localhost:${PORT}/search (Standard)`);
       console.log(`   - POST http://localhost:${PORT}/search/pramaan (Pramaan Mock)`);
