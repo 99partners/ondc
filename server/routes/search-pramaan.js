@@ -198,5 +198,41 @@ router.get('/pramaan/debug', async (req, res) => {
   }
 });
 
+// Debug endpoint to view stored data
+router.get('/debug', async (req, res) => {
+  try {
+    // Get query parameters for filtering
+    const { transaction_id, message_id, bap_id } = req.query;
+    const limit = parseInt(req.query.limit) || 20000;
+    
+    // Build query based on filters
+    const query = {};
+    if (transaction_id) query.transaction_id = transaction_id;
+    if (message_id) query.message_id = message_id;
+    if (bap_id && bap_id !== 'undefined') {
+      query['context.bap_id'] = bap_id;
+    }
+    
+    const searchRequests = await SearchData.find(query).sort({ created_at: -1 }).limit(limit);
+    
+    // Process data to handle undefined context properties
+    const safeRequests = searchRequests.map(req => {
+      const safeReq = req.toObject ? req.toObject() : {...req};
+      if (!safeReq.context) {
+        safeReq.context = {};
+      }
+      return safeReq;
+    });
+    
+    res.json({
+      count: safeRequests.length,
+      requests: safeRequests
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
 

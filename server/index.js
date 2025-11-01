@@ -7,6 +7,7 @@ const path = require('path');
 
 // Import route files
 const searchRoutes = require('./routes/search');
+const searchPramaanRoutes = require('./routes/search-pramaan');
 const selectRoutes = require('./routes/select');
 const initRoutes = require('./routes/init');
 const updateRoutes = require('./routes/update');
@@ -82,6 +83,7 @@ app.get('/', (req, res) => {
  // adjust path if needed
 app.use('/confirm', confirmRouter);
 app.use('/search', searchRoutes); // Standard search endpoint
+app.use('/search-pramaan', searchPramaanRoutes); // Pramaan search endpoint
 app.use('/select', selectRoutes);
 app.use('/init', initRoutes);
 app.use('/update', updateRoutes);
