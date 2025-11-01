@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const { validateContext, ensureSafeContext, createErrorResponse, createAckResponse } = require('../utils/contextValidator');
+const { validateContext, ensureSafeContext, createErrorResponse, createAckResponse, extractSafePayload, createTransactionTrailData } = require('../utils/contextValidator');
 
-// BPP Configuration - These should be moved to a config file in a production environment
-const BPP_ID = 'staging.99digicom.com';
-const BPP_URI = 'https://staging.99digicom.com';
+// BPP configuration
+const BPP_ID = process.env.BPP_ID || 'ondc.bpp.com';
+const BPP_URI = process.env.BPP_URI || 'https://ondc.bpp.com/api';
 
 // Import InitData model to access init request data
 const InitDataSchema = new mongoose.Schema({
@@ -17,7 +17,7 @@ const InitDataSchema = new mongoose.Schema({
   created_at: { type: Date, default: Date.now }
 });
 
-// ONDC Error Codes (kept only if needed elsewhere); pulled from utils for responses
+// ONDC Error Codes
 const ONDC_ERRORS = {
   '20006': { type: 'DOMAIN-ERROR', code: '20006', message: 'Invalid response: billing timestamp mismatch' }
 };
@@ -72,9 +72,6 @@ async function getInitDataForTransaction(transactionId) {
   }
 }
 
-// Utility Functions
-// Validation and response helpers are imported from '../utils/contextValidator'
-
 // Store transaction trail
 async function storeTransactionTrail(data) {
   try {
@@ -83,16 +80,23 @@ async function storeTransactionTrail(data) {
     console.log(`✅ Transaction trail stored: ${data.transaction_id}/${data.message_id} - ${data.action} - ${data.status}`);
   } catch (error) {
     console.error('❌ Failed to store transaction trail:', error);
+    // Retry once after a short delay
+    try {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const trail = new TransactionTrail(data);
+      await trail.save();
+      console.log(`✅ Transaction trail stored (retry): ${data.transaction_id}/${data.message_id} - ${data.action} - ${data.status}`);
+    } catch (retryError) {
+      console.error('❌ Failed to store transaction trail (retry):', retryError);
+    }
   }
 }
 
 // /confirm API - Buyer app sends confirm request
 router.post('/', async (req, res) => {
   try {
-    const payload = req.body || {};
-    // Create a safe context and message using shared utils (select/init reference)
-    const safeContext = ensureSafeContext(payload?.context);
-    const message = payload.message || {};
+    // Extract safe payload using shared utility
+    const { safeContext, safeMessage, isValid, errors } = extractSafePayload(req.body, 'confirm');
     
     console.log('=== INCOMING CONFIRM REQUEST ===');
     console.log('Transaction ID:', safeContext.transaction_id);
@@ -102,205 +106,181 @@ router.post('/', async (req, res) => {
     console.log('Action:', safeContext.action);
     console.log('================================');
     
-    // Store all incoming requests regardless of validation (align with select)
+    // Store all incoming requests regardless of validation
     try {
       const incomingData = new ConfirmData({
-        transaction_id: safeContext.transaction_id || 'unknown',
-        message_id: safeContext.message_id || 'unknown',
-        context: payload.context || {},
-        message: payload.message || {},
-        order: payload.message?.order || {},
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
+        context: req.body?.context || {},
+        message: req.body?.message || {},
+        order: req.body?.message?.order || {},
         created_at: new Date()
       });
       await incomingData.save();
       console.log(`✅ Raw confirm data stored: ${safeContext.transaction_id}/${safeContext.message_id}`);
     } catch (storeErr) {
       console.error('❌ Failed to store raw confirm request:', storeErr.message);
+      // Retry once after a short delay
+      try {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const incomingData = new ConfirmData({
+          transaction_id: safeContext.transaction_id,
+          message_id: safeContext.message_id,
+          context: req.body?.context || {},
+          message: req.body?.message || {},
+          order: req.body?.message?.order || {},
+          created_at: new Date()
+        });
+        await incomingData.save();
+        console.log(`✅ Raw confirm data stored (retry): ${safeContext.transaction_id}/${safeContext.message_id}`);
+      } catch (retryErr) {
+        console.error('❌ Failed to store raw confirm request (retry):', retryErr.message);
+      }
     }
 
-    // Validate payload structure
-    if (!payload || !payload.context || !payload.message) {
-      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
-      await storeTransactionTrail({
-        transaction_id: safeContext.transaction_id || 'unknown',
-        message_id: safeContext.message_id || 'unknown',
+    // Basic validation
+    if (!isValid) {
+      const errorResponse = createErrorResponse('10001', `Invalid request: ${errors.join(', ')}`);
+      await storeTransactionTrail(createTransactionTrailData({
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
         action: 'confirm',
         direction: 'incoming',
         status: 'NACK',
         context: safeContext,
         error: errorResponse.error,
-        timestamp: new Date(),
-        bap_id: safeContext.bap_id,
-        bap_uri: safeContext.bap_uri,
         bpp_id: BPP_ID,
         bpp_uri: BPP_URI
-      });
+      }));
       return res.status(400).json(errorResponse);
     }
-    
-    // Use original context but fall back to safeContext for completeness
-    const context = payload.context || safeContext;
-    
-    // ✅ CRITICAL FIX: Get init data FIRST and override billing BEFORE validation
-    const initData = await getInitDataForTransaction(context.transaction_id);
-    
-    console.log('🔍 INIT DATA SEARCH RESULT:');
-    console.log('- Transaction ID searched:', context.transaction_id);
-    console.log('- Found init data:', !!initData);
-    
-    let billingMatched = false;
-    let initBillingCreatedAt = null;
-    let confirmBillingCreatedAt = message.order?.billing?.created_at;
 
-    // Ensure billing.created_at matches exactly with on_init
-    if (message.order && message.order.billing && initData) {
-      const initBilling = initData.message?.order?.billing;
-      if (initBilling && initBilling.created_at) {
-        initBillingCreatedAt = initBilling.created_at;
-        
-        console.log('🔄 OVERRIDING BILLING DATA:');
-        console.log('Before - created_at:', message.order.billing.created_at);
-        console.log('Init   - created_at:', initBilling.created_at);
-        console.log('Before - updated_at:', message.order.billing.updated_at);
-        console.log('Init   - updated_at:', initBilling.updated_at);
-        
-        // Override the entire billing object to ensure exact match
-        message.order.billing = JSON.parse(JSON.stringify(initBilling));
-        
-        console.log('After  - created_at:', message.order.billing.created_at);
-        console.log('After  - updated_at:', message.order.billing.updated_at);
-        
-        billingMatched = true;
-        console.log('✅ SUCCESS: Billing object overridden with init data');
-      } else {
-        console.log('❌ No billing data found in init request');
-      }
-    } else {
-      console.log('⚠️  Cannot override billing - missing:', {
-        hasOrder: !!message.order,
-        hasBilling: !!(message.order && message.order.billing),
-        hasInitData: !!initData
-      });
-    }
-
-    // Validate context (with corrected billing data if available)
-    const contextErrors = validateContext(context);
-    if (contextErrors.length > 0) {
-      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
-      await storeTransactionTrail({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
+    // Validate message - confirm specific validation
+    if (!safeMessage.order) {
+      const errorResponse = createErrorResponse('10002', 'Invalid message: order is required');
+      await storeTransactionTrail(createTransactionTrailData({
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
         action: 'confirm',
         direction: 'incoming',
         status: 'NACK',
-        context,
+        context: safeContext,
         error: errorResponse.error,
-        timestamp: new Date(),
-        bap_id: context.bap_id,
-        bap_uri: context.bap_uri,
         bpp_id: BPP_ID,
         bpp_uri: BPP_URI
-      });
+      }));
       return res.status(400).json(errorResponse);
     }
 
-    // Store confirm data in MongoDB Atlas with retry mechanism
-    let retries = 0;
-    const maxRetries = 3;
-    
-    while (retries < maxRetries) {
-      try {
-        // Get the created_at timestamp from init data if available
-        let createdAt = new Date();
-        if (initData && initData.created_at) {
-          createdAt = initData.created_at;
-          console.log('✅ Using created_at timestamp from init:', createdAt);
-        }
+    // Get init data for this transaction
+    console.log('🔍 INIT DATA SEARCH RESULT:');
+    console.log('- Transaction ID searched:', safeContext.transaction_id);
+    const initData = await getInitDataForTransaction(safeContext.transaction_id);
+    const hasInitData = !!initData;
+    console.log('- Found init data:', hasInitData);
 
+    // CONFIRM-SPECIFIC BILLING LOGIC
+    // Check if we have the order and billing details
+    const hasOrder = !!safeMessage.order;
+    const hasBilling = !!safeMessage.order?.billing;
+    
+    console.log('⚠️  Billing check status:', { hasOrder, hasBilling, hasInitData });
+
+    // If we have init data and confirm has billing, check timestamps
+    let billingMatched = false;
+    let initBillingCreatedAt = null;
+    let confirmBillingCreatedAt = null;
+
+    if (hasInitData && hasOrder && hasBilling) {
+      // Extract billing timestamps
+      initBillingCreatedAt = initData.message?.order?.billing?.created_at;
+      confirmBillingCreatedAt = safeMessage.order?.billing?.created_at;
+      
+      // Check if billing timestamps match
+      if (initBillingCreatedAt && confirmBillingCreatedAt && initBillingCreatedAt === confirmBillingCreatedAt) {
+        billingMatched = true;
+        console.log('✅ Billing timestamps match!');
+        console.log('- Init billing created_at:', initBillingCreatedAt);
+        console.log('- Confirm billing created_at:', confirmBillingCreatedAt);
+      } else {
+        console.log('❌ Billing timestamps do not match!');
+        console.log('- Init billing created_at:', initBillingCreatedAt);
+        console.log('- Confirm billing created_at:', confirmBillingCreatedAt);
+      }
+    }
+
+    // Store the confirm data with billing match status
+    try {
+      const confirmData = new ConfirmData({
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
+        context: req.body?.context,
+        message: req.body?.message,
+        order: safeMessage.order,
+        billing_matched: billingMatched,
+        init_billing_created_at: initBillingCreatedAt,
+        confirm_billing_created_at: confirmBillingCreatedAt,
+        created_at: new Date()
+      });
+      await confirmData.save();
+      console.log(`✅ Confirm data stored: ${safeContext.transaction_id}/${safeContext.message_id}`);
+    } catch (error) {
+      console.error('❌ Failed to store confirm data:', error.message);
+      // Retry once after a short delay
+      try {
+        await new Promise(resolve => setTimeout(resolve, 500));
         const confirmData = new ConfirmData({
-          transaction_id: context.transaction_id,
-          message_id: context.message_id,
-          context,
-          message,
-          order: message.order,
+          transaction_id: safeContext.transaction_id,
+          message_id: safeContext.message_id,
+          context: req.body?.context,
+          message: req.body?.message,
+          order: safeMessage.order,
           billing_matched: billingMatched,
           init_billing_created_at: initBillingCreatedAt,
           confirm_billing_created_at: confirmBillingCreatedAt,
-          created_at: createdAt // Use the same created_at as init
+          created_at: new Date()
         });
         await confirmData.save();
-        console.log('✅ Confirm data saved to MongoDB Atlas database');
-        console.log('📊 Saved confirm request for transaction:', context.transaction_id);
-        console.log('💳 Billing matched:', billingMatched);
-        break; // Exit the loop if successful
-      } catch (dbError) {
-        retries++;
-        console.error(`❌ Failed to save confirm data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
-        
-        if (retries >= maxRetries) {
-          console.error('❌ Max retries reached. Could not save confirm data.');
-        } else {
-          // Wait before retrying
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
+        console.log(`✅ Confirm data stored (retry): ${safeContext.transaction_id}/${safeContext.message_id}`);
+      } catch (retryError) {
+        console.error('❌ Failed to store confirm data (retry):', retryError.message);
       }
     }
 
-    // Store transaction trail in MongoDB Atlas - MANDATORY for audit
-    try {
-      await storeTransactionTrail({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        action: 'confirm',
-        direction: 'incoming',
-        status: 'ACK',
-        context,
-        message,
-        timestamp: new Date(),
-        bap_id: context.bap_id,
-        bap_uri: context.bap_uri,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI,
-        domain: context.domain,
-        country: context.country,
-        city: context.city,
-        core_version: context.core_version
-      });
-    } catch (trailError) {
-      console.error('❌ Failed to store transaction trail:', trailError.message);
-    }
+    // Store transaction trail for successful request
+    await storeTransactionTrail(createTransactionTrailData({
+      transaction_id: safeContext.transaction_id,
+      message_id: safeContext.message_id,
+      action: 'confirm',
+      direction: 'incoming',
+      status: 'ACK',
+      context: safeContext,
+      bpp_id: BPP_ID,
+      bpp_uri: BPP_URI
+    }));
 
-    // Send ACK response
-    const ackResponse = createAckResponse();
-    console.log('✅ Sending ACK response for confirm request');
-    console.log('🎯 Billing timestamp handling:', billingMatched ? 'MATCHED' : 'NOT MATCHED');
-    res.status(202).json(ackResponse);
-    
+    // Return ACK response
+    return res.status(200).json(createAckResponse());
   } catch (error) {
-    console.error('❌ Error in /confirm:', error);
-    const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`);
+    console.error('❌ Error processing confirm request:', error);
     
-    // Store error in transaction trail
-    try {
-      await storeTransactionTrail({
-        transaction_id: req.body?.context?.transaction_id || 'unknown',
-        message_id: req.body?.context?.message_id || 'unknown',
-        action: 'confirm',
-        direction: 'incoming',
-        status: 'NACK',
-        context: req.body?.context || {},
-        error: errorResponse.error,
-        timestamp: new Date(),
-        bap_id: req.body?.context?.bap_id,
-        bap_uri: req.body?.context?.bap_uri,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI
-      });
-    } catch (trailError) {
-      console.error('❌ Failed to store error trail:', trailError);
-    }
+    // Create a safe context from the request body
+    const safeContext = ensureSafeContext(req.body?.context);
     
-    res.status(500).json(errorResponse);
+    // Store transaction trail for error
+    await storeTransactionTrail(createTransactionTrailData({
+      transaction_id: safeContext.transaction_id,
+      message_id: safeContext.message_id,
+      action: 'confirm',
+      direction: 'incoming',
+      status: 'NACK',
+      context: safeContext,
+      error: { type: 'INTERNAL-ERROR', code: '500', message: 'Internal server error' },
+      bpp_id: BPP_ID,
+      bpp_uri: BPP_URI
+    }));
+    
+    return res.status(500).json(createErrorResponse('10003', 'Internal server error'));
   }
 });
 
@@ -308,18 +288,23 @@ router.post('/', async (req, res) => {
 router.get('/debug', async (req, res) => {
   try {
     const confirmRequests = await ConfirmData.find().sort({ created_at: -1 }).limit(50);
+    const initRequests = await InitData.find().sort({ created_at: -1 }).limit(50);
     
     res.json({
       confirm_count: confirmRequests.length,
+      init_count: initRequests.length,
       confirm_requests: confirmRequests.map(req => ({
         transaction_id: req.transaction_id,
         message_id: req.message_id,
-        context: req.context,
-        message: req.message,
-        order: req.order,
         billing_matched: req.billing_matched,
         init_billing_created_at: req.init_billing_created_at,
         confirm_billing_created_at: req.confirm_billing_created_at,
+        created_at: req.created_at
+      })),
+      init_requests: initRequests.map(req => ({
+        transaction_id: req.transaction_id,
+        message_id: req.message_id,
+        billing_created_at: req.message?.order?.billing?.created_at,
         created_at: req.created_at
       }))
     });
@@ -329,19 +314,22 @@ router.get('/debug', async (req, res) => {
   }
 });
 
-// Endpoint to check confirm data for a specific transaction
+// Endpoint to check init data for a specific transaction
 router.get('/debug/:transaction_id', async (req, res) => {
   try {
     const { transaction_id } = req.params;
+    const initData = await getInitDataForTransaction(transaction_id);
     const confirmData = await ConfirmData.find({ transaction_id }).sort({ created_at: -1 });
     
     res.json({
       transaction_id,
+      init_data: initData ? {
+        message_id: initData.message_id,
+        billing: initData.message?.order?.billing,
+        created_at: initData.created_at
+      } : null,
       confirm_attempts: confirmData.map(item => ({
         message_id: item.message_id,
-        context: item.context,
-        message: item.message,
-        order: item.order,
         billing_matched: item.billing_matched,
         init_billing_created_at: item.init_billing_created_at,
         confirm_billing_created_at: item.confirm_billing_created_at,
