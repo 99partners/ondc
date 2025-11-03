@@ -181,7 +181,15 @@ router.post('/', (req, res) => {
       context,
       message,
       error: errorResponse.error,
-      timestamp: new Date()
+      timestamp: new Date(),
+      bap_id: context?.bap_id,
+      bap_uri: context?.bap_uri,
+      bpp_id: BPP_ID,
+      bpp_uri: BPP_URI,
+      domain: context?.domain,
+      country: context?.country,
+      city: context?.city,
+      core_version: context?.core_version
     });
     
     return res.status(400).json(errorResponse);
@@ -199,7 +207,15 @@ router.post('/', (req, res) => {
         status: 'ACK',
         context,
         message,
-        timestamp: new Date()
+        timestamp: new Date(),
+        bap_id: context.bap_id,
+        bap_uri: context.bap_uri,
+        bpp_id: BPP_ID,
+        bpp_uri: BPP_URI,
+        domain: context.domain,
+        country: context.country,
+        city: context.city,
+        core_version: context.core_version
       });
       
       // Store confirm data in MongoDB Atlas with retry mechanism and improved error handling
@@ -212,14 +228,14 @@ router.post('/', (req, res) => {
         billing_matched: true,
         init_billing_created_at: initData?.created_at ? new Date(initData.created_at).toISOString() : null,
         confirm_billing_created_at: new Date().toISOString(),
-        raw_request: rawRequest, // Store the complete raw request
+        raw_request: rawRequestLog, // Store the complete raw request with headers and IP
         created_at: new Date()
       });
       
       const saveConfirmData = (retryCount = 0) => {
         const maxRetries = 3;
         
-        confirmData.save()
+        return confirmData.save()
           .then(() => {
             console.log('✅ Confirm data saved to MongoDB Atlas database');
             console.log('📊 Saved confirm request for transaction:', context.transaction_id);
@@ -285,10 +301,16 @@ router.post('/', (req, res) => {
           });
       };
       
-      saveConfirmData();
-      
-      // Send ACK response immediately
-      res.json(createAcknowledgmentResponse(context));
+      saveConfirmData()
+        .then(() => {
+          // Send ACK response immediately
+          res.json(createAcknowledgmentResponse(context));
+        })
+        .catch(error => {
+          console.error('❌ Failed to save confirm data after all retries:', error);
+          // Still send ACK response to maintain protocol flow
+          res.json(createAcknowledgmentResponse(context));
+        });
     })
     .catch(error => {
       console.error('❌ Error processing confirm request:', error);
