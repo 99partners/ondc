@@ -219,25 +219,29 @@ router.post('/', (req, res) => {
       });
       
       // Store confirm data in MongoDB Atlas with retry mechanism and improved error handling
-      const confirmData = new ConfirmData({
+      console.log('🔄 Attempting to save confirm data to database...');
+      
+      // Create a direct document to insert
+      const confirmDataDoc = {
         transaction_id: context.transaction_id,
         message_id: context.message_id,
-        context,
-        message,
+        context: context,
+        message: message,
         order: message.order,
         billing_matched: true,
         init_billing_created_at: initData?.created_at ? new Date(initData.created_at).toISOString() : null,
         confirm_billing_created_at: new Date().toISOString(),
         raw_request: rawRequestLog, // Store the complete raw request with headers and IP
         created_at: new Date()
-      });
+      };
       
       const saveConfirmData = (retryCount = 0) => {
         const maxRetries = 3;
         
-        return confirmData.save()
-          .then(() => {
-            console.log('✅ Confirm data saved to MongoDB Atlas database');
+        // Use direct MongoDB collection insert instead of Mongoose
+        return mongoose.connection.collection('confirmdatas').insertOne(confirmDataDoc)
+          .then(result => {
+            console.log('✅ Confirm data saved to MongoDB Atlas database with ID:', result.insertedId);
             console.log('📊 Saved confirm request for transaction:', context.transaction_id);
             
             // Send on_confirm response after a short delay
@@ -296,7 +300,15 @@ router.post('/', (req, res) => {
               console.log(`🔄 Retrying save operation in ${(retryCount + 1) * 1000}ms...`);
               setTimeout(() => saveConfirmData(retryCount + 1), (retryCount + 1) * 1000);
             } else {
-              console.error('❌ Max retries reached. Could not save confirm data.');
+              console.error('❌ Max retries reached. Could not save confirm data. Error:', error);
+              // Try direct collection insert as a last resort
+              try {
+                mongoose.connection.db.collection('confirm_data_backup').insertOne(confirmDataDoc)
+                  .then(() => console.log('✅ Saved to backup collection as last resort'))
+                  .catch(err => console.error('❌ Even backup save failed:', err));
+              } catch (finalError) {
+                console.error('❌ Final attempt to save data failed:', finalError);
+              }
             }
           });
       };
