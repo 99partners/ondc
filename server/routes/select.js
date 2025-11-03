@@ -2,9 +2,14 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 
-// BPP Configuration - These should be moved to a config file in a production environment
-const BPP_ID = 'staging.99digicom.com';
-const BPP_URI = 'https://staging.99digicom.com';
+// // BPP Configuration - These should be moved to a config file in a production environment
+// const BPP_ID = 'staging.99digicom.com';
+// const BPP_URI = 'https://staging.99digicom.com';
+
+const BPP_IDS = ['preprod.99digicom.com', 'staging.99digicom.com'];
+const BPP_URIS = ['https://preprod.99digicom.com', 'https://staging.99digicom.com'];
+const BPP_ID = BPP_IDS[0];
+const BPP_URI = BPP_URIS[0];
 
 // ONDC Error Codes
 const ONDC_ERRORS = {
