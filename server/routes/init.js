@@ -3,11 +3,8 @@ const router = express.Router();
 const mongoose = require('mongoose');
 
 // BPP Configuration - These should be moved to a config file in a production environment
-// Keep arrays so both IDs/URIs are available; use first as active
-const BPP_IDS = ['preprod.99digicom.com', 'staging.99digicom.com'];
-const BPP_URIS = ['https://preprod.99digicom.com', 'https://staging.99digicom.com'];
-const BPP_ID = BPP_IDS[0];
-const BPP_URI = BPP_URIS[0];
+const BPP_ID = 'staging.99digicom.com';
+const BPP_URI = 'https://staging.99digicom.com';
 
 // ONDC Error Codes
 const ONDC_ERRORS = {
@@ -77,9 +74,9 @@ function validateContext(context) {
   return errors;
 }
 
-function createErrorResponse(errorCode, message) {
+function createErrorResponse(errorCode, message, context = null) {
   const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
-  return {
+  const response = {
     message: { ack: { status: 'NACK' } },
     error: {
       type: error.type,
@@ -87,10 +84,18 @@ function createErrorResponse(errorCode, message) {
       message: error.message
     }
   };
+  
+  // Include context if available
+  if (context) {
+    response.context = context;
+  }
+  
+  return response;
 }
 
-function createAckResponse() {
+function createAckResponse(context) {
   return {
+    context: context,
     message: { ack: { status: 'ACK' } }
   };
 }
@@ -121,7 +126,7 @@ router.post('/', async (req, res) => {
     
     // Validate payload structure
     if (!payload || !payload.context || !payload.message) {
-      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
+      const errorResponse = createErrorResponse('10001', 'Invalid request structure', payload?.context || null);
       await storeTransactionTrail({
         transaction_id: payload?.context?.transaction_id || 'unknown',
         message_id: payload?.context?.message_id || 'unknown',
@@ -144,7 +149,7 @@ router.post('/', async (req, res) => {
     // Validate context
     const contextErrors = validateContext(context);
     if (contextErrors.length > 0) {
-      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
+      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`, context);
       await storeTransactionTrail({
         transaction_id: context.transaction_id,
         message_id: context.message_id,
@@ -217,13 +222,13 @@ router.post('/', async (req, res) => {
     }
 
     // Send ACK response
-    const ackResponse = createAckResponse();
+    const ackResponse = createAckResponse(context);
     console.log('✅ Sending ACK response for init request');
     res.status(202).json(ackResponse);
     
   } catch (error) {
     console.error('❌ Error in /init:', error);
-    const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`);
+    const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`, req.body?.context || null);
     res.status(500).json(errorResponse);
   }
 });
