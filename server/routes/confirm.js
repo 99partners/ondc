@@ -261,10 +261,27 @@
 //       console.error('❌ Failed to store transaction trail:', trailError.message);
 //     }
 
-//     // Send ACK response
-//     const ackResponse = createAckResponse();
-//     console.log('✅ Sending ACK response for confirm request');
-//     res.status(202).json(ackResponse);
+//     // Store confirm data in MongoDB Atlas
+    try {
+      const confirmData = new ConfirmData({
+        transaction_id: context.transaction_id,
+        message_id: context.message_id,
+        context,
+        message,
+        order: message.order
+      });
+      await confirmData.save();
+      console.log('✅ Confirm data saved to MongoDB Atlas database');
+      console.log('📊 Saved confirm request for transaction:', context.transaction_id);
+    } catch (dbError) {
+      console.error('❌ Failed to save confirm data to MongoDB Atlas:', dbError.message);
+      // Continue execution but log the error
+    }
+
+    // Send ACK response
+    const ackResponse = createAckResponse();
+    console.log('✅ Sending ACK response for confirm request');
+    res.status(202).json(ackResponse);
     
 //   } catch (error) {
 //     console.error('❌ Error in /confirm:', error);
@@ -621,26 +638,33 @@ router.post('/', async (req, res) => {
 // Debug endpoint to view stored data
 router.get('/debug', async (req, res) => {
   try {
-    const confirmRequests = await ConfirmData.find().sort({ created_at: -1 }).limit(50);
-    const initRequests = await InitData.find().sort({ created_at: -1 }).limit(50);
+    // Get query parameters for filtering
+    const { transaction_id, message_id, bap_id } = req.query;
+    const limit = parseInt(req.query.limit) || 50;
+    
+    // Build query based on filters
+    const query = {};
+    if (transaction_id) query.transaction_id = transaction_id;
+    if (message_id) query.message_id = message_id;
+    if (bap_id && bap_id !== 'undefined') {
+      query['context.bap_id'] = bap_id;
+    }
+    
+    const confirmRequests = await ConfirmData.find(query).sort({ created_at: -1 }).limit(limit);
+    
+    // Process data to handle undefined context properties
+    const safeRequests = confirmRequests.map(request => {
+      const safeRequest = request.toObject ? request.toObject() : {...request};
+      if (!safeRequest.context) {
+        safeRequest.context = {};
+      }
+      return safeRequest;
+    });
     
     res.json({
-      confirm_count: confirmRequests.length,
-      init_count: initRequests.length,
-      confirm_requests: confirmRequests.map(req => ({
-        transaction_id: req.transaction_id,
-        message_id: req.message_id,
-        billing_matched: req.billing_matched,
-        init_billing_created_at: req.init_billing_created_at,
-        confirm_billing_created_at: req.confirm_billing_created_at,
-        created_at: req.created_at
-      })),
-      init_requests: initRequests.map(req => ({
-        transaction_id: req.transaction_id,
-        message_id: req.message_id,
-        billing_created_at: req.message?.order?.billing?.created_at,
-        created_at: req.created_at
-      }))
+      count: confirmRequests.length,
+      filters: { transaction_id, message_id, bap_id, limit },
+      requests: safeRequests
     });
     
   } catch (error) {
