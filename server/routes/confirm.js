@@ -142,6 +142,25 @@ function storeTransactionTrail(data) {
 router.post('/', (req, res) => {
   console.log('🔵 Received confirm request from buyer app');
   
+  // Store the complete raw request for debugging and audit
+  const rawRequest = req.body;
+  console.log('📥 Raw request:', JSON.stringify(rawRequest, null, 2));
+  
+  // Create a raw request log entry
+  const rawRequestLog = {
+    endpoint: '/confirm',
+    method: 'POST',
+    headers: req.headers,
+    body: rawRequest,
+    timestamp: new Date(),
+    ip: req.ip || req.connection.remoteAddress
+  };
+  
+  // Store raw request in MongoDB (create a collection if needed)
+  mongoose.connection.collection('raw_requests').insertOne(rawRequestLog)
+    .then(() => console.log('✅ Raw request stored successfully'))
+    .catch(err => console.error('❌ Failed to store raw request:', err));
+  
   const { context, message } = req.body;
   console.log('📝 Context:', JSON.stringify(context, null, 2));
   console.log('📝 Message:', JSON.stringify(message, null, 2));
@@ -183,7 +202,7 @@ router.post('/', (req, res) => {
         timestamp: new Date()
       });
       
-      // Store confirm data in MongoDB Atlas with retry mechanism
+      // Store confirm data in MongoDB Atlas with retry mechanism and improved error handling
       const confirmData = new ConfirmData({
         transaction_id: context.transaction_id,
         message_id: context.message_id,
@@ -192,10 +211,14 @@ router.post('/', (req, res) => {
         order: message.order,
         billing_matched: true,
         init_billing_created_at: initData?.created_at ? new Date(initData.created_at).toISOString() : null,
-        confirm_billing_created_at: new Date().toISOString()
+        confirm_billing_created_at: new Date().toISOString(),
+        raw_request: rawRequest, // Store the complete raw request
+        created_at: new Date()
       });
       
-      const saveConfirmData = () => {
+      const saveConfirmData = (retryCount = 0) => {
+        const maxRetries = 3;
+        
         confirmData.save()
           .then(() => {
             console.log('✅ Confirm data saved to MongoDB Atlas database');
@@ -251,9 +274,14 @@ router.post('/', (req, res) => {
             }, 500);
           })
           .catch(error => {
-            console.error('❌ Failed to save confirm data to MongoDB Atlas:', error.message);
-            console.log('🔄 Retrying save operation...');
-            setTimeout(saveConfirmData, 1000);
+            console.error(`❌ Failed to save confirm data to MongoDB Atlas (Attempt ${retryCount + 1}/${maxRetries}):`, error.message);
+            
+            if (retryCount < maxRetries - 1) {
+              console.log(`🔄 Retrying save operation in ${(retryCount + 1) * 1000}ms...`);
+              setTimeout(() => saveConfirmData(retryCount + 1), (retryCount + 1) * 1000);
+            } else {
+              console.error('❌ Max retries reached. Could not save confirm data.');
+            }
           });
       };
       
