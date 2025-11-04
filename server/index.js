@@ -11,9 +11,6 @@ const searchPramaanRoutes = require('./routes/search-pramaan');
 const selectRoutes = require('./routes/select');
 const initRoutes = require('./routes/init');
 const confirmRoutes = require('./routes/confirm');
-const statusRoutes = require('./routes/status');
-const cancelRoutes = require('./routes/cancel');
-const trackRoutes = require('./routes/track');
 const updateRoutes = require('./routes/update');
 
 const app = express();
@@ -60,9 +57,6 @@ app.use('/select', selectRoutes);
 app.use('/init', initRoutes);
 app.use('/confirm', confirmRoutes);
 app.use('/update', updateRoutes);
-app.use('/status', statusRoutes);
-app.use('/cancel', cancelRoutes);
-app.use('/track', trackRoutes);
 
 // Debug endpoint for transaction trails
 app.get('/debug/transactions', async (req, res) => {
@@ -100,9 +94,6 @@ mongoose.connect(MONGODB_URI, {
       console.log(`   - http://localhost:${PORT}/select/debug`);
       console.log(`   - http://localhost:${PORT}/init/debug`);
       console.log(`   - http://localhost:${PORT}/confirm/debug`);
-      console.log(`   - http://localhost:${PORT}/status/debug`);
-      console.log(`   - http://localhost:${PORT}/cancel/debug`);
-      console.log(`   - http://localhost:${PORT}/track/debug`);
       console.log(`   - http://localhost:${PORT}/update/debug`);
       console.log(`   - http://localhost:${PORT}/debug/transactions`);
       console.log('🔍 Search endpoints:');

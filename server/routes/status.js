@@ -3,11 +3,8 @@ const router = express.Router();
 const mongoose = require('mongoose');
 
 // BPP Configuration - These should be moved to a config file in a production environment
-// Keep arrays so both IDs/URIs are available; use first as active
-const BPP_IDS = ['preprod.99digicom.com', 'staging.99digicom.com'];
-const BPP_URIS = ['https://preprod.99digicom.com', 'https://staging.99digicom.com'];
-const BPP_ID = BPP_IDS[0];
-const BPP_URI = BPP_URIS[0];
+const BPP_ID = 'staging.99digicom.com';
+const BPP_URI = 'https://staging.99digicom.com';
 
 // ONDC Error Codes
 const ONDC_ERRORS = {
@@ -69,7 +66,8 @@ function validateContext(context) {
   if (!context.core_version) errors.push('core_version is required');
   if (!context.bap_id) errors.push('bap_id is required');
   if (!context.bap_uri) errors.push('bap_uri is required');
-  // For incoming BAP -> BPP requests, bpp_id/bpp_uri are not mandatory
+  if (!context.bpp_id) errors.push('bpp_id is required');
+  if (!context.bpp_uri) errors.push('bpp_uri is required');
   if (!context.transaction_id) errors.push('transaction_id is required');
   if (!context.message_id) errors.push('message_id is required');
   if (!context.timestamp) errors.push('timestamp is required');
