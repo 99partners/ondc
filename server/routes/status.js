@@ -215,8 +215,8 @@ router.post('/', async (req, res) => {
       console.error('❌ Failed to store transaction trail:', trailError.message);
     }
 
-    // Send ACK response
-    const ackResponse = createAckResponse();
+    // Send ACK response with echoed context (align with other endpoints)
+    const ackResponse = { ...createAckResponse(), context };
     console.log('✅ Sending ACK response for status request');
     res.status(202).json(ackResponse);
     
