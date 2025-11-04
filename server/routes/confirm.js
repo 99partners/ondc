@@ -250,7 +250,7 @@ router.post('/', async (req, res) => {
 		}
 
 		// Send ACK response
-		const ackResponse = createAckResponse();
+		const ackResponse = { ...createAckResponse(), context: context };
 		console.log('✅ Sending ACK response for confirm request');
 		return res.status(202).json(ackResponse);
 	} catch (error) {
