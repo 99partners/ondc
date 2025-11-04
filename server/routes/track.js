@@ -3,7 +3,6 @@ const router = express.Router();
 const mongoose = require('mongoose');
 
 // BPP Configuration - These should be moved to a config file in a production environment
-// Keep arrays so both IDs/URIs are available; use first as active
 const BPP_IDS = ['preprod.99digicom.com', 'staging.99digicom.com'];
 const BPP_URIS = ['https://preprod.99digicom.com', 'https://staging.99digicom.com'];
 const BPP_ID = BPP_IDS[0];
@@ -17,7 +16,7 @@ const ONDC_ERRORS = {
   '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' }
 };
 
-// Import models - These should be moved to separate model files in a production environment
+// Models
 const TransactionTrailSchema = new mongoose.Schema({
   transaction_id: { type: String, required: true, index: true },
   message_id: { type: String, required: true, index: true },
@@ -39,7 +38,7 @@ const TransactionTrailSchema = new mongoose.Schema({
   created_at: { type: Date, default: Date.now }
 });
 
-const StatusDataSchema = new mongoose.Schema({
+const TrackDataSchema = new mongoose.Schema({
   transaction_id: { type: String, required: true, index: true },
   message_id: { type: String, required: true, index: true },
   context: { type: Object, required: true },
@@ -48,20 +47,16 @@ const StatusDataSchema = new mongoose.Schema({
   created_at: { type: Date, default: Date.now }
 });
 
-// Check if models are already registered to avoid OverwriteModelError
 const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('TransactionTrail', TransactionTrailSchema);
-const StatusData = mongoose.models.StatusData || mongoose.model('StatusData', StatusDataSchema);
+const TrackData = mongoose.models.TrackData || mongoose.model('TrackData', TrackDataSchema);
 
-// Utility Functions
+// Utils
 function validateContext(context) {
   const errors = [];
-  
   if (!context) {
     errors.push('Context is required');
     return errors;
   }
-  
-  // --- ONDC Mandatory Context Fields for BAP -> BPP Request (as per V1.2.0) ---
   if (!context.domain) errors.push('domain is required');
   if (!context.country) errors.push('country is required');
   if (!context.city) errors.push('city is required');
@@ -69,34 +64,27 @@ function validateContext(context) {
   if (!context.core_version) errors.push('core_version is required');
   if (!context.bap_id) errors.push('bap_id is required');
   if (!context.bap_uri) errors.push('bap_uri is required');
-  // For incoming BAP -> BPP requests, bpp_id/bpp_uri are not mandatory
   if (!context.transaction_id) errors.push('transaction_id is required');
   if (!context.message_id) errors.push('message_id is required');
   if (!context.timestamp) errors.push('timestamp is required');
   if (!context.ttl) errors.push('ttl is required');
-  
   return errors;
 }
 
-function createErrorResponse(errorCode, message) {
+function createErrorResponse(errorCode, message, context = null) {
   const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
-  return {
+  const response = {
     message: { ack: { status: 'NACK' } },
-    error: {
-      type: error.type,
-      code: error.code,
-      message: error.message
-    }
+    error: { type: error.type, code: error.code, message: error.message }
   };
+  if (context) response.context = context;
+  return response;
 }
 
-function createAckResponse() {
-  return {
-    message: { ack: { status: 'ACK' } }
-  };
+function createAckResponse(context) {
+  return { context, message: { ack: { status: 'ACK' } } };
 }
 
-// Store transaction trail
 async function storeTransactionTrail(data) {
   try {
     const trail = new TransactionTrail(data);
@@ -107,26 +95,24 @@ async function storeTransactionTrail(data) {
   }
 }
 
-// /status API - Buyer app sends status request
+// /track API - Buyer app sends track request
 router.post('/', async (req, res) => {
   try {
     const payload = req.body;
-    
-    console.log('=== INCOMING STATUS REQUEST ===');
+
+    console.log('=== INCOMING TRACK REQUEST ===');
     console.log('Transaction ID:', payload?.context?.transaction_id);
     console.log('Message ID:', payload?.context?.message_id);
     console.log('BAP ID:', payload?.context?.bap_id);
-    console.log('Domain:', payload?.context?.domain);
     console.log('Action:', payload?.context?.action);
     console.log('================================');
-    
-    // Validate payload structure
+
     if (!payload || !payload.context || !payload.message) {
-      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
+      const errorResponse = createErrorResponse('10001', 'Invalid request structure', payload?.context || null);
       await storeTransactionTrail({
         transaction_id: payload?.context?.transaction_id || 'unknown',
         message_id: payload?.context?.message_id || 'unknown',
-        action: 'status',
+        action: 'track',
         direction: 'incoming',
         status: 'NACK',
         context: payload?.context || {},
@@ -141,15 +127,14 @@ router.post('/', async (req, res) => {
     }
 
     const { context, message } = payload;
-    
-    // Validate context
+
     const contextErrors = validateContext(context);
     if (contextErrors.length > 0) {
-      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
+      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`, context);
       await storeTransactionTrail({
         transaction_id: context.transaction_id,
         message_id: context.message_id,
-        action: 'status',
+        action: 'track',
         direction: 'incoming',
         status: 'NACK',
         context,
@@ -163,81 +148,56 @@ router.post('/', async (req, res) => {
       return res.status(400).json(errorResponse);
     }
 
-    // Store status data in MongoDB Atlas with retry mechanism
-    let retries = 0;
-    const maxRetries = 3;
-    
-    while (retries < maxRetries) {
-      try {
-        const statusData = new StatusData({
-          transaction_id: context.transaction_id,
-          message_id: context.message_id,
-          context,
-          message,
-          order_id: message.order_id
-        });
-        await statusData.save();
-        console.log('✅ Status data saved to MongoDB Atlas database');
-        console.log('📊 Saved status request for transaction:', context.transaction_id);
-        break; // Exit the loop if successful
-      } catch (dbError) {
-        retries++;
-        console.error(`❌ Failed to save status data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
-        
-        if (retries >= maxRetries) {
-          console.error('❌ Max retries reached. Could not save status data.');
-        } else {
-          // Wait before retrying
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-    }
-
-    // Store transaction trail in MongoDB Atlas - MANDATORY for audit
+    // Persist track request
     try {
-      await storeTransactionTrail({
+      const trackData = new TrackData({
         transaction_id: context.transaction_id,
         message_id: context.message_id,
-        action: 'status',
-        direction: 'incoming',
-        status: 'ACK',
         context,
         message,
-        timestamp: new Date(),
-        bap_id: context.bap_id,
-        bap_uri: context.bap_uri,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI,
-        domain: context.domain,
-        country: context.country,
-        city: context.city,
-        core_version: context.core_version
+        order_id: message.order_id
       });
-    } catch (trailError) {
-      console.error('❌ Failed to store transaction trail:', trailError.message);
+      await trackData.save();
+      console.log('✅ Track data saved to MongoDB Atlas');
+    } catch (dbError) {
+      console.error('❌ Failed to save track data:', dbError.message);
     }
 
-    // Send ACK response
-    const ackResponse = createAckResponse();
-    console.log('✅ Sending ACK response for status request');
-    res.status(202).json(ackResponse);
-    
+    // Store ACK trail
+    await storeTransactionTrail({
+      transaction_id: context.transaction_id,
+      message_id: context.message_id,
+      action: 'track',
+      direction: 'incoming',
+      status: 'ACK',
+      context,
+      message,
+      timestamp: new Date(),
+      bap_id: context.bap_id,
+      bap_uri: context.bap_uri,
+      bpp_id: BPP_ID,
+      bpp_uri: BPP_URI,
+      domain: context.domain,
+      country: context.country,
+      city: context.city,
+      core_version: context.core_version
+    });
+
+    // Send ACK
+    res.status(202).json(createAckResponse(context));
+
   } catch (error) {
-    console.error('❌ Error in /status:', error);
+    console.error('❌ Error in /track:', error);
     const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`);
     res.status(500).json(errorResponse);
   }
 });
 
-// Debug endpoint to view stored data
+// Debug endpoint to view stored track requests
 router.get('/debug', async (req, res) => {
   try {
-    const statusRequests = await StatusData.find().sort({ created_at: -1 }).limit(50);
-    res.json({
-      count: statusRequests.length,
-      requests: statusRequests
-    });
-    
+    const trackRequests = await TrackData.find().sort({ created_at: -1 }).limit(50);
+    res.json({ count: trackRequests.length, requests: trackRequests });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
