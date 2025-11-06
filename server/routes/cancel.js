@@ -74,40 +74,41 @@ async function storeTransactionTrail(data) {
 router.post('/', async (req, res) => {
   try {
     // Extract and validate safe payload using shared utilities
-    const { context: rawContext, message: rawMessage } = extractSafePayload(req.body);
+    console.log('=== DEBUG: Raw request body ===');
+    console.log(JSON.stringify(req.body, null, 2));
+    const { payload, safeContext, message } = extractSafePayload(req);
     
     console.log('=== INCOMING CANCEL REQUEST ===');
-    console.log('Transaction ID:', rawContext?.transaction_id);
-    console.log('Message ID:', rawContext?.message_id);
-    console.log('BAP ID:', rawContext?.bap_id);
-    console.log('Domain:', rawContext?.domain);
-    console.log('Action:', rawContext?.action);
+    console.log('Transaction ID:', safeContext?.transaction_id);
+    console.log('Message ID:', safeContext?.message_id);
+    console.log('BAP ID:', safeContext?.bap_id);
+    console.log('Domain:', safeContext?.domain);
+    console.log('Action:', safeContext?.action);
     console.log('================================');
     
     // Validate context using shared utility
-    const contextErrors = validateContext(rawContext);
+    const contextErrors = validateContext(payload.context);
     if (contextErrors.length > 0) {
       const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
       await storeTransactionTrail({
-        transaction_id: rawContext?.transaction_id || 'unknown',
-        message_id: rawContext?.message_id || 'unknown',
+        transaction_id: safeContext?.transaction_id || 'unknown',
+        message_id: safeContext?.message_id || 'unknown',
         action: 'cancel',
         direction: 'incoming',
         status: 'NACK',
-        context: rawContext || {},
+        context: safeContext || {},
         error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: rawContext?.bap_id,
-        bap_uri: rawContext?.bap_uri,
+        bap_id: safeContext?.bap_id,
+        bap_uri: safeContext?.bap_uri,
         bpp_id: BPP_ID,
         bpp_uri: BPP_URI
       });
       return res.status(400).json(errorResponse);
     }
 
-    // Ensure safe context with defaults
-    const safeContext = ensureSafeContext(rawContext);
-    const { context, message } = { context: safeContext, message: rawMessage };
+    // Use the already extracted safeContext; no redeclaration
+    const context = safeContext;
 
     // Store cancel data in MongoDB Atlas with retry mechanism
     let retries = 0;
@@ -116,17 +117,17 @@ router.post('/', async (req, res) => {
     while (retries < maxRetries) {
       try {
         const cancelData = new CancelData({
-          transaction_id: context.transaction_id,
-          message_id: context.message_id,
-          context,
-          message,
+          transaction_id: safeContext.transaction_id,
+          message_id: safeContext.message_id,
+          context: safeContext,
+          message: message,
           order_id: message.order_id,
           cancellation_reason_id: message.cancellation_reason_id,
-          raw_payload: req.body // Store raw payload for audit
+          raw_payload: payload // Store raw payload for audit
         });
         await cancelData.save();
         console.log('✅ Cancel data saved to MongoDB Atlas database');
-        console.log('📊 Saved cancel request for transaction:', context.transaction_id);
+        console.log('📊 Saved cancel request for transaction:', safeContext.transaction_id);
         break; // Exit the loop if successful
       } catch (dbError) {
         retries++;
@@ -143,22 +144,14 @@ router.post('/', async (req, res) => {
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit
     try {
-      const trailData = createTransactionTrailData({
-        context,
-        action: 'cancel',
-        direction: 'incoming',
-        status: 'ACK',
-        message,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI
-      });
+      const trailData = createTransactionTrailData({ message }, safeContext, 'cancel', 'ACK', { BPP_ID, BPP_URI });
       await storeTransactionTrail(trailData);
     } catch (trailError) {
       console.error('❌ Failed to store transaction trail:', trailError.message);
     }
 
     // Send ACK response with context
-    const ackResponse = { ...createAckResponse(), context: context };
+    const ackResponse = { ...createAckResponse(), context: safeContext };
     console.log('✅ Sending ACK response for cancel request');
     res.status(202).json(ackResponse);
     
