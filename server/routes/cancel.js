@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const { validateContext, ensureSafeContext, extractSafePayload, createErrorResponse, createAckResponse, createTransactionTrailData } = require('../utils/contextValidator');
 
 // BPP Configuration - These should be moved to a config file in a production environment
 // const BPP_ID = 'staging.99digicom.com';
@@ -48,6 +49,7 @@ const CancelDataSchema = new mongoose.Schema({
   message: { type: Object, required: true },
   order_id: { type: String, index: true },
   cancellation_reason_id: { type: String },
+  raw_payload: { type: Object }, // Store raw payload for audit
   created_at: { type: Date, default: Date.now }
 });
 
@@ -114,58 +116,41 @@ async function storeTransactionTrail(data) {
 // /cancel API - Buyer app sends cancel request
 router.post('/', async (req, res) => {
   try {
-    const payload = req.body;
+    // Extract and validate safe payload using shared utilities
+    const { context: rawContext, message: rawMessage } = extractSafePayload(req.body);
     
     console.log('=== INCOMING CANCEL REQUEST ===');
-    console.log('Transaction ID:', payload?.context?.transaction_id);
-    console.log('Message ID:', payload?.context?.message_id);
-    console.log('BAP ID:', payload?.context?.bap_id);
-    console.log('Domain:', payload?.context?.domain);
-    console.log('Action:', payload?.context?.action);
+    console.log('Transaction ID:', rawContext?.transaction_id);
+    console.log('Message ID:', rawContext?.message_id);
+    console.log('BAP ID:', rawContext?.bap_id);
+    console.log('Domain:', rawContext?.domain);
+    console.log('Action:', rawContext?.action);
     console.log('================================');
     
-    // Validate payload structure
-    if (!payload || !payload.context || !payload.message) {
-      const errorResponse = createErrorResponse('10001', 'Invalid request structure');
+    // Validate context using shared utility
+    const contextErrors = validateContext(rawContext);
+    if (contextErrors.length > 0) {
+      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
       await storeTransactionTrail({
-        transaction_id: payload?.context?.transaction_id || 'unknown',
-        message_id: payload?.context?.message_id || 'unknown',
+        transaction_id: rawContext?.transaction_id || 'unknown',
+        message_id: rawContext?.message_id || 'unknown',
         action: 'cancel',
         direction: 'incoming',
         status: 'NACK',
-        context: payload?.context || {},
+        context: rawContext || {},
         error: errorResponse.error,
         timestamp: new Date(),
-        bap_id: payload?.context?.bap_id,
-        bap_uri: payload?.context?.bap_uri,
+        bap_id: rawContext?.bap_id,
+        bap_uri: rawContext?.bap_uri,
         bpp_id: BPP_ID,
         bpp_uri: BPP_URI
       });
       return res.status(400).json(errorResponse);
     }
 
-    const { context, message } = payload;
-    
-    // Validate context
-    const contextErrors = validateContext(context);
-    if (contextErrors.length > 0) {
-      const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
-      await storeTransactionTrail({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
-        action: 'cancel',
-        direction: 'incoming',
-        status: 'NACK',
-        context,
-        error: errorResponse.error,
-        timestamp: new Date(),
-        bap_id: context.bap_id,
-        bap_uri: context.bap_uri,
-        bpp_id: BPP_ID,
-        bpp_uri: BPP_URI
-      });
-      return res.status(400).json(errorResponse);
-    }
+    // Ensure safe context with defaults
+    const safeContext = ensureSafeContext(rawContext);
+    const { context, message } = { context: safeContext, message: rawMessage };
 
     // Store cancel data in MongoDB Atlas with retry mechanism
     let retries = 0;
@@ -179,7 +164,8 @@ router.post('/', async (req, res) => {
           context,
           message,
           order_id: message.order_id,
-          cancellation_reason_id: message.cancellation_reason_id
+          cancellation_reason_id: message.cancellation_reason_id,
+          raw_payload: req.body // Store raw payload for audit
         });
         await cancelData.save();
         console.log('✅ Cancel data saved to MongoDB Atlas database');
@@ -200,30 +186,22 @@ router.post('/', async (req, res) => {
 
     // Store transaction trail in MongoDB Atlas - MANDATORY for audit
     try {
-      await storeTransactionTrail({
-        transaction_id: context.transaction_id,
-        message_id: context.message_id,
+      const trailData = createTransactionTrailData({
+        context,
         action: 'cancel',
         direction: 'incoming',
         status: 'ACK',
-        context,
         message,
-        timestamp: new Date(),
-        bap_id: context.bap_id,
-        bap_uri: context.bap_uri,
         bpp_id: BPP_ID,
-        bpp_uri: BPP_URI,
-        domain: context.domain,
-        country: context.country,
-        city: context.city,
-        core_version: context.core_version
+        bpp_uri: BPP_URI
       });
+      await storeTransactionTrail(trailData);
     } catch (trailError) {
       console.error('❌ Failed to store transaction trail:', trailError.message);
     }
 
-    // Send ACK response
-    const ackResponse = createAckResponse();
+    // Send ACK response with context
+    const ackResponse = { ...createAckResponse(), context: context };
     console.log('✅ Sending ACK response for cancel request');
     res.status(202).json(ackResponse);
     
@@ -234,13 +212,26 @@ router.post('/', async (req, res) => {
   }
 });
 
+
 // Debug endpoint to view stored data
 router.get('/debug', async (req, res) => {
   try {
     const cancelRequests = await CancelData.find().sort({ created_at: -1 }).limit(50);
+    
+    // Return safe processed data without raw_payload for security
+    const safeRequests = cancelRequests.map(request => ({
+      transaction_id: request.transaction_id,
+      message_id: request.message_id,
+      order_id: request.order_id,
+      cancellation_reason_id: request.cancellation_reason_id,
+      context: request.context,
+      message: request.message,
+      created_at: request.created_at
+    }));
+    
     res.json({
-      count: cancelRequests.length,
-      requests: cancelRequests
+      count: safeRequests.length,
+      requests: safeRequests
     });
     
   } catch (error) {
