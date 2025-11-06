@@ -1,18 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const { validateContext, ensureSafeContext, extractSafePayload, createErrorResponse, createAckResponse, createTransactionTrailData } = require('../utils/contextValidator');
 
 // BPP Configuration
 const BPP_ID = 'staging.99digicom.com';
 const BPP_URI = 'https://staging.99digicom.com';
 
-// ONDC Error Codes
-const ONDC_ERRORS = {
-  '20002': { type: 'CONTEXT-ERROR', code: '20002', message: 'Invalid timestamp' },
-  '30022': { type: 'CONTEXT-ERROR', code: '30022', message: 'Invalid timestamp' },
-  '10001': { type: 'CONTEXT-ERROR', code: '10001', message: 'Invalid context: Mandatory field missing or incorrect value.' },
-  '10002': { type: 'CONTEXT-ERROR', code: '10002', message: 'Invalid message' }
-};
+// Validators and response helpers are imported from utils/contextValidator
 
 // Transaction Trail Schema
 const TransactionTrailSchema = new mongoose.Schema({
@@ -43,6 +38,7 @@ const TrackDataSchema = new mongoose.Schema({
   context: { type: Object, required: true },
   message: { type: Object, required: true },
   order_id: { type: String, index: true },
+  raw_payload: { type: Object },
   created_at: { type: Date, default: Date.now }
 });
 
@@ -51,45 +47,7 @@ const TransactionTrail = mongoose.models.TransactionTrail || mongoose.model('Tra
 const TrackData = mongoose.models.TrackData || mongoose.model('TrackData', TrackDataSchema);
 
 // Utility Functions
-function validateContext(context) {
-  const errors = [];
-  if (!context) {
-    errors.push('Context is required');
-    return errors;
-  }
-  if (!context.domain) errors.push('domain is required');
-  if (!context.country) errors.push('country is required');
-  if (!context.city) errors.push('city is required');
-  if (!context.action) errors.push('action is required');
-  if (!context.core_version) errors.push('core_version is required');
-  if (!context.bap_id) errors.push('bap_id is required');
-  if (!context.bap_uri) errors.push('bap_uri is required');
-  if (!context.bpp_id) errors.push('bpp_id is required');
-  if (!context.bpp_uri) errors.push('bpp_uri is required');
-  if (!context.transaction_id) errors.push('transaction_id is required');
-  if (!context.message_id) errors.push('message_id is required');
-  if (!context.timestamp) errors.push('timestamp is required');
-  if (!context.ttl) errors.push('ttl is required');
-  return errors;
-}
-
-function createErrorResponse(errorCode, message) {
-  const error = ONDC_ERRORS[errorCode] || { type: 'CONTEXT-ERROR', code: errorCode, message };
-  return {
-    message: { ack: { status: 'NACK' } },
-    error: {
-      type: error.type,
-      code: error.code,
-      message: error.message
-    }
-  };
-}
-
-function createAckResponse() {
-  return {
-    message: { ack: { status: 'ACK' } }
-  };
-}
+// Validation and response helpers are now imported; remove local implementations
 
 async function storeTransactionTrail(data) {
   try {
@@ -103,84 +61,95 @@ async function storeTransactionTrail(data) {
 
 
 // --- Track Endpoint --- //
-router.post('/track', async (req, res) => {
-  const { context, message } = req.body;
+// Mounted at '/track' and alias '/on_track'; use root path here
+router.post('/', async (req, res) => {
+  try {
+    // Safely extract payload and create safe context
+    const { payload, safeContext, message } = extractSafePayload(req);
+
+    // Store raw incoming request (best-effort)
+    try {
+      const rawRecord = new TrackData({ raw_payload: payload, created_at: new Date(), transaction_id: safeContext.transaction_id, message_id: safeContext.message_id, context: safeContext, message, order_id: message.order_id || '' });
+      await rawRecord.save();
+    } catch (storeError) {
+      console.error('❌ Failed to store raw track request:', storeError.message);
+    }
 
   // Validate Context
-  const contextErrors = validateContext(context);
+  const contextErrors = validateContext(payload.context);
   if (contextErrors.length > 0) {
-    const errorResponse = createErrorResponse('10001', contextErrors.join(', '));
-    await storeTransactionTrail({
-      ...context,
-      action: 'track',
-      direction: 'incoming',
-      status: 'NACK',
-      error: errorResponse.error,
-      timestamp: new Date()
-    });
+    const errorResponse = createErrorResponse('10001', `Context validation failed: ${contextErrors.join(', ')}`);
+    await storeTransactionTrail(createTransactionTrailData({ error: errorResponse.error }, safeContext, 'track', 'NACK', { BPP_ID, BPP_URI }));
     return res.status(400).json(errorResponse);
   }
 
   // Validate Message
-  if (!message || !message.order_id) {
+  if (!payload.message || !payload.message.order_id) {
     const errorResponse = createErrorResponse('10002', 'order_id is required in the message');
-    await storeTransactionTrail({
-      ...context,
-      action: 'track',
-      direction: 'incoming',
-      status: 'NACK',
-      error: errorResponse.error,
-      timestamp: new Date()
-    });
+    await storeTransactionTrail(createTransactionTrailData({ error: errorResponse.error }, safeContext, 'track', 'NACK', { BPP_ID, BPP_URI }));
     return res.status(400).json(errorResponse);
   }
 
   // Store Track Data
-  try {
-    const trackData = new TrackData({
-      transaction_id: context.transaction_id,
-      message_id: context.message_id,
-      context: context,
-      message: message,
-      order_id: message.order_id
-    });
-    await trackData.save();
-    console.log(`✅ Track data stored: ${trackData.transaction_id}/${trackData.message_id}`);
-
-    // Store Transaction Trail
-    await storeTransactionTrail({
-      ...context,
-      action: 'track',
-      direction: 'incoming',
-      status: 'ACK',
-      message: message,
-      timestamp: new Date()
-    });
-
-    // Send ACK Response
-    const ackResponse = createAckResponse();
-    res.json(ackResponse);
-
-  } catch (error) {
-    console.error('❌ Error storing track data:', error);
-    const errorResponse = createErrorResponse('500', 'Internal Server Error');
-    await storeTransactionTrail({
-      ...context,
-      action: 'track',
-      direction: 'incoming',
-      status: 'NACK',
-      error: errorResponse.error,
-      timestamp: new Date()
-    });
-    res.status(500).json(errorResponse);
+  let retries = 0;
+  const maxRetries = 3;
+  while (retries < maxRetries) {
+    try {
+      const trackData = new TrackData({
+        transaction_id: safeContext.transaction_id,
+        message_id: safeContext.message_id,
+        context: safeContext,
+        message: payload.message,
+        order_id: payload.message.order_id,
+        raw_payload: payload
+      });
+      await trackData.save();
+      console.log('✅ Track data saved to MongoDB Atlas database');
+      break;
+    } catch (dbError) {
+      retries++;
+      console.error(`❌ Failed to save track data to MongoDB Atlas (Attempt ${retries}/${maxRetries}):`, dbError.message);
+      if (retries >= maxRetries) {
+        console.error('❌ Max retries reached. Could not save track data.');
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
   }
+
+  // Store transaction trail
+  try {
+    await storeTransactionTrail(createTransactionTrailData({ message: payload.message }, safeContext, 'track', 'ACK', { BPP_ID, BPP_URI }));
+  } catch (trailError) {
+    console.error('❌ Failed to store transaction trail:', trailError.message);
+  }
+
+  // Send ACK response with echoed safe context
+  const ackWithContext = { ...createAckResponse(), context: safeContext };
+  console.log('✅ Sending ACK response for track request');
+  return res.status(202).json(ackWithContext);
+} catch (error) {
+  console.error('❌ Error in /track:', error);
+  const errorResponse = createErrorResponse('10002', `Internal server error: ${error.message}`);
+  return res.status(500).json(errorResponse);
+}
 });
 
 // --- Debug Endpoint to View Stored Track Data --- //
-router.get('/debug/track', async (req, res) => {
+// Exposed as '/track/debug' and '/on_track/debug'
+router.get('/debug', async (req, res) => {
   try {
     const tracks = await TrackData.find().sort({ created_at: -1 }).limit(50);
-    res.json(tracks);
+    const safeRequests = tracks.map(doc => {
+      const safe = doc.toObject();
+      safe.context = ensureSafeContext(safe.context);
+      const requiredProps = ['domain', 'action', 'bap_id', 'bap_uri', 'transaction_id', 'message_id', 'timestamp'];
+      requiredProps.forEach(prop => {
+        if (!safe.context[prop]) safe.context[prop] = '';
+      });
+      return safe;
+    });
+    res.json({ count: tracks.length, requests: safeRequests });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
