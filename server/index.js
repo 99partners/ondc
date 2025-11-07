@@ -15,6 +15,8 @@ const updateRoutes = require('./routes/update');
 const cancelRoutes = require('./routes/cancel');
 const statusRoutes = require('./routes/status');
 const trackRoutes = require('./routes/track');
+const issueStatusRoutes = require('./routes/issue_status');
+const issueRoutes = require('./routes/issue');
 
 const app = express();
 
@@ -63,6 +65,8 @@ app.use('/update', updateRoutes);
 app.use('/cancel', cancelRoutes);
 app.use('/status', statusRoutes);
 app.use('/track', trackRoutes);
+app.use('/issue_status', issueStatusRoutes);
+app.use('/issue', issueRoutes);
 
 
 // Debug endpoint for transaction trails
@@ -103,6 +107,8 @@ mongoose.connect(MONGODB_URI, {
       console.log(`   - http://localhost:${PORT}/confirm/debug`);
       console.log(`   - http://localhost:${PORT}/update/debug`);
       console.log(`   - http://localhost:${PORT}/track/debug`);
+      console.log(`   - http://localhost:${PORT}/issue_status/debug`);
+      console.log(`   - http://localhost:${PORT}/issue/debug`);
       console.log(`   - http://localhost:${PORT}/debug/transactions`);
       console.log('🔍 Search endpoints:');
       console.log(`   - POST http://localhost:${PORT}/search (Standard)`);
